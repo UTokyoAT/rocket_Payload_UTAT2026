@@ -9,6 +9,7 @@
 - [環境構築](docs/setup.md)
 - [書き込み方法](docs/flashing.md)
 - [制御構造・アーキテクチャ](docs/architecture.md)
+- [地上局セットアップ](docs/ground-station.md)
 - [JLCPCB 発注手順](docs/pcb-ordering.md)
 
 ---
@@ -37,6 +38,11 @@ rocket_Payload_UTAT2026/
 │   ├── Radio/               # WiFi SoftAP・WebSocket ブロードキャスト
 │   ├── Actuator/            # モーター・パラシュート・ブザー・LED制御
 │   └── StateMachine/        # ミッションステート遷移ロジック
+│
+├── ground/
+│   ├── receiver.py          # WebSocket受信＋CSVロギング
+│   ├── requirements.txt
+│   └── logs/                # 保存されたCSVログ（.gitignore推奨）
 │
 ├── hardware/
 │   ├── kicad/               # KiCad プロジェクトファイル

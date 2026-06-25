@@ -1,4 +1,5 @@
 #include "Radio.h"
+#include "dashboard.h"
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 
@@ -20,6 +21,12 @@ void Radio::begin(const char* ssid, const char* password) {
 
     _ws.onEvent(_onWsEvent);
     _server.addHandler(&_ws);
+
+    // ブラウザで 192.168.4.1 を開くとダッシュボードが表示される
+    _server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
+        req->send_P(200, "text/html", DASHBOARD_HTML);
+    });
+
     _server.begin();
 }
 
@@ -36,5 +43,5 @@ void Radio::broadcast(const SensorData& d, MissionState state) {
     _ws.textAll(json);
 }
 
-void Radio::cleanup()    { _ws.cleanupClients(); }
-int  Radio::clientCount(){ return _ws.count(); }
+void Radio::cleanup()     { _ws.cleanupClients(); }
+int  Radio::clientCount() { return _ws.count(); }
