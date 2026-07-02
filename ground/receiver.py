@@ -6,11 +6,11 @@ PULL方式: このスクリプトが機体の GET /data を定期的にポーリ
 （機体→PCへのPUSH/POSTはPC側ファイアウォールに阻まれ信頼できないため使わない）
 
 受信データを CSV に保存しつつ、ターミナルへのライブ表示と
-Tkinter ウィンドウ（高度チャート・現在地/向き/目的地マップ・モーター出力・
-目的地までの距離と方位・手動モーター制御スライダー）を表示する。
+Tkinter ウィンドウ（高度チャート・現在地/向き/目的地マップ・左右モーター出力・
+目的地までの距離と方位・左右独立の手動モーター制御スライダー）を表示する。
 
-手動モーター制御は「有効にする」チェックを入れるとスライダーの値を
-GET /motor?value=N として機体へ送り続ける（250ms間隔）。機体側は1秒間
+手動モーター制御は「有効にする」チェックを入れると左右スライダーの値を
+GET /motor?left=N&right=M として機体へ送り続ける（250ms間隔）。機体側は1秒間
 コマンドを受信しないと自動的に出力を0にするフェイルセイフを持つ。
 
 使い方:
@@ -36,21 +36,23 @@ from datetime import datetime
 from pathlib import Path
 
 # ─── バイナリフレームレイアウト（機体側 lib/Radio/Radio.h と共有する契約）───
-# 31バイト、リトルエンディアン。
-#   offset  size  type     field           note
+# 33バイト、リトルエンディアン。
+#   offset  size  type     field               note
 #     0      4    uint32   timestamp_ms
-#     4      4    float32  alt             [m]
-#     8      4    float32  roll            [deg]
-#    12      4    float32  pitch           [deg]
-#    16      4    float32  yaw             [deg]
-#    20      4    float32  lat             double→float32に縮小
-#    24      4    float32  lon             double→float32に縮小
+#     4      4    float32  alt                 [m]
+#     8      4    float32  roll                [deg]
+#    12      4    float32  pitch               [deg]
+#    16      4    float32  yaw                 [deg]
+#    20      4    float32  lat                 double→float32に縮小
+#    24      4    float32  lon                 double→float32に縮小
 #    28      1    uint8    mission_state
-#    29      2    int16    motor_output    Actuator::setMotor()相当値（-255〜255）
-FRAME_FMT = "<IffffffBh"
-FRAME_SIZE = struct.calcsize(FRAME_FMT)  # 31
+#    29      2    int16    motor_output_left   Actuator::setMotorLeft()相当値（-255〜255）
+#    31      2    int16    motor_output_right  Actuator::setMotorRight()相当値（-255〜255）
+FRAME_FMT = "<IffffffBhh"
+FRAME_SIZE = struct.calcsize(FRAME_FMT)  # 33
 
-Frame = namedtuple("Frame", ["t", "alt", "roll", "pitch", "yaw", "lat", "lon", "state", "motor"])
+Frame = namedtuple("Frame", ["t", "alt", "roll", "pitch", "yaw", "lat", "lon", "state",
+                              "motor_l", "motor_r"])
 
 STATE_NAMES = {
     0: "STANDBY",
@@ -62,7 +64,8 @@ STATE_NAMES = {
 }
 
 CSV_HEADER = ["timestamp_ms", "alt_m", "roll_deg", "pitch_deg", "yaw_deg",
-              "lat", "lon", "state", "motor_output", "dist_to_dest_m", "bearing_to_dest_deg"]
+              "lat", "lon", "state", "motor_output_left", "motor_output_right",
+              "dist_to_dest_m", "bearing_to_dest_deg"]
 
 LOG_DIR = Path(__file__).parent / "logs"
 
@@ -104,7 +107,7 @@ def fmt(frame: Frame, dist_m: float | None, brg: float | None) -> str:
         f"\r[{state_name:<12}] "
         f"alt={frame.alt:7.2f}m  "
         f"R={frame.roll:6.1f}°  P={frame.pitch:6.1f}°  Y={frame.yaw:6.1f}°  "
-        f"GPS={frame.lat:.5f},{frame.lon:.5f}  M={frame.motor:4d}"
+        f"GPS={frame.lat:.5f},{frame.lon:.5f}  ML={frame.motor_l:4d} MR={frame.motor_r:4d}"
     )
     if dist_m is not None:
         line += f"  DIST={dist_m:7.1f}m BRG={brg:5.1f}°"
@@ -140,20 +143,20 @@ class Poller(threading.Thread):
             self.stop_event.wait(self.interval_s)
 
 
-def _send_motor_command(url: str, value: int, timeout_s: float) -> None:
+def _send_motor_command(url: str, left: int, right: int, timeout_s: float) -> None:
     """/motor へのベストエフォート送信（失敗しても黙って諦める。呼び出し側でリトライする前提）。"""
     try:
-        urllib.request.urlopen(f"{url}?value={value}", timeout=timeout_s)
+        urllib.request.urlopen(f"{url}?left={left}&right={right}", timeout=timeout_s)
     except (urllib.error.URLError, OSError, TimeoutError):
         pass
 
 
 class MotorCommander(threading.Thread):
-    """有効化されている間、現在値を /motor へ定期送信し続けるバックグラウンドスレッド。
+    """有効化されている間、現在の左右値を /motor へ定期送信し続けるバックグラウンドスレッド。
 
-    機体側 (Radio::getMotorCommand()) は一定時間コマンドを受信しないと自動的に
-    出力を0にするフェイルセイフを持つため、ここでは「有効」な間は常に再送し続ける
-    （スライダーの値が変わっていなくても、接続維持のために送り続ける必要がある）。
+    機体側 (Radio::getMotorCommandLeft/Right()) は一定時間コマンドを受信しないと
+    自動的に出力を0にするフェイルセイフを持つため、ここでは「有効」な間は常に
+    再送し続ける（スライダーの値が変わっていなくても、接続維持のために送り続ける必要がある）。
     """
 
     def __init__(self, url: str, send_interval_s: float, timeout_s: float,
@@ -164,12 +167,13 @@ class MotorCommander(threading.Thread):
         self.timeout_s = timeout_s
         self.stop_event = stop_event
         self.enabled = False
-        self.value = 0
+        self.value_left = 0
+        self.value_right = 0
 
     def run(self) -> None:
         while not self.stop_event.is_set():
             if self.enabled:
-                _send_motor_command(self.url, self.value, self.timeout_s)
+                _send_motor_command(self.url, self.value_left, self.value_right, self.timeout_s)
             self.stop_event.wait(self.send_interval_s)
 
 
@@ -187,7 +191,7 @@ class Recorder:
         self._writer.writerow([
             frame.t, frame.alt, frame.roll, frame.pitch, frame.yaw,
             frame.lat, frame.lon, STATE_NAMES.get(frame.state, frame.state),
-            frame.motor,
+            frame.motor_l, frame.motor_r,
             "" if dist_m is None else f"{dist_m:.2f}",
             "" if brg is None else f"{brg:.1f}",
         ])
@@ -277,7 +281,8 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
     alt_var = tk.StringVar(value="--")
     rpy_var = tk.StringVar(value="--")
     gps_var = tk.StringVar(value="--")
-    motor_var = tk.StringVar(value="--")
+    motor_l_var = tk.StringVar(value="--")
+    motor_r_var = tk.StringVar(value="--")
     dist_var = tk.StringVar(value="--" if dest.dest is None else "取得中...")
 
     root.columnconfigure(0, weight=0)
@@ -309,69 +314,93 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
     card(left, "ROLL / PITCH / YAW [deg]", rpy_var, value_font=("Consolas", 13))
     card(left, "GPS (lat, lon)", gps_var, value_font=("Consolas", 13))
 
-    motor_card = card(left, "MOTOR OUTPUT", motor_var)
-    motor_gauge = tk.Canvas(motor_card, bg=BG, width=220, height=16, highlightthickness=0)
-    motor_gauge.pack(anchor="w", padx=10, pady=(0, 10))
+    def make_motor_gauge(parent) -> tk.Canvas:
+        gauge = tk.Canvas(parent, bg=BG, width=220, height=14, highlightthickness=0)
+        gauge.pack(anchor="w", padx=10, pady=(0, 4))
+        return gauge
 
-    def draw_motor_gauge(speed: int):
-        motor_gauge.delete("all")
-        w, h = 220, 16
+    def draw_motor_gauge(gauge: tk.Canvas, speed: int):
+        gauge.delete("all")
+        w, h = 220, 14
         cx = w // 2
-        motor_gauge.create_line(cx, 0, cx, h, fill=MUTED)
+        gauge.create_line(cx, 0, cx, h, fill=MUTED)
         frac = max(-1.0, min(1.0, speed / 255.0))
         bw = frac * (w // 2 - 4)
         color = ACCENT if speed >= 0 else "#f84"
-        motor_gauge.create_rectangle(cx, 2, cx + bw, h - 2, fill=color, outline="")
+        gauge.create_rectangle(cx, 2, cx + bw, h - 2, fill=color, outline="")
+
+    motor_card = tk.Frame(left, bg=CARD_BG)
+    tk.Label(motor_card, text="MOTOR OUTPUT (L / R)", bg=CARD_BG, fg=MUTED,
+             font=LABEL_FONT).pack(anchor="w", padx=10, pady=(8, 2))
+    tk.Label(motor_card, textvariable=motor_l_var, bg=CARD_BG, fg=ACCENT,
+              font=("Consolas", 14, "bold")).pack(anchor="w", padx=10)
+    motor_l_gauge = make_motor_gauge(motor_card)
+    tk.Label(motor_card, textvariable=motor_r_var, bg=CARD_BG, fg=ACCENT,
+              font=("Consolas", 14, "bold")).pack(anchor="w", padx=10)
+    motor_r_gauge = make_motor_gauge(motor_card)
+    motor_card.pack(fill="x", padx=12, pady=4)
 
     card(left, "目的地までの距離 / 方位", dist_var, value_font=("Consolas", 13))
 
-    # ─── 手動モーター制御 ───
+    # ─── 手動モーター制御（左右独立） ───
     manual_frame = tk.Frame(left, bg=CARD_BG)
     tk.Label(manual_frame, text="手動モーター制御", bg=CARD_BG, fg=MUTED,
              font=LABEL_FONT).pack(anchor="w", padx=10, pady=(8, 2))
 
     manual_enabled_var = tk.BooleanVar(value=False)
-    manual_value_var = tk.IntVar(value=0)
+    manual_left_var = tk.IntVar(value=0)
+    manual_right_var = tk.IntVar(value=0)
 
-    def on_slider_change(val: str) -> None:
-        motor_cmd.value = int(float(val))
+    def on_slider_left_change(val: str) -> None:
+        motor_cmd.value_left = int(float(val))
+
+    def on_slider_right_change(val: str) -> None:
+        motor_cmd.value_right = int(float(val))
+
+    def stop_both(send: bool = True) -> None:
+        manual_left_var.set(0)
+        manual_right_var.set(0)
+        motor_cmd.value_left = 0
+        motor_cmd.value_right = 0
+        if send:
+            threading.Thread(
+                target=_send_motor_command,
+                args=(motor_cmd.url, 0, 0, motor_cmd.timeout_s),
+                daemon=True,
+            ).start()
 
     def on_toggle_enable() -> None:
         enabled = manual_enabled_var.get()
         motor_cmd.enabled = enabled
-        scale.configure(state=("normal" if enabled else "disabled"))
+        scale_left.configure(state=("normal" if enabled else "disabled"))
+        scale_right.configure(state=("normal" if enabled else "disabled"))
         if not enabled:
-            manual_value_var.set(0)
-            motor_cmd.value = 0
-            threading.Thread(
-                target=_send_motor_command,
-                args=(motor_cmd.url, 0, motor_cmd.timeout_s),
-                daemon=True,
-            ).start()
+            stop_both()
 
     tk.Checkbutton(manual_frame, text="有効にする（機体のモーターが実際に動きます）",
                    variable=manual_enabled_var, command=on_toggle_enable,
                    bg=CARD_BG, fg="#eee", selectcolor=BG, activebackground=CARD_BG,
                    font=LABEL_FONT).pack(anchor="w", padx=10)
 
-    scale = tk.Scale(manual_frame, from_=-255, to=255, orient="horizontal",
-                      length=220, variable=manual_value_var, command=on_slider_change,
-                      bg=CARD_BG, fg="#eee", troughcolor=BG, highlightthickness=0,
-                      state="disabled")
-    scale.pack(anchor="w", padx=10, pady=(4, 4))
+    tk.Label(manual_frame, text="LEFT", bg=CARD_BG, fg=MUTED,
+             font=LABEL_FONT).pack(anchor="w", padx=10, pady=(4, 0))
+    scale_left = tk.Scale(manual_frame, from_=-255, to=255, orient="horizontal",
+                           length=220, variable=manual_left_var, command=on_slider_left_change,
+                           bg=CARD_BG, fg="#eee", troughcolor=BG, highlightthickness=0,
+                           state="disabled")
+    scale_left.pack(anchor="w", padx=10)
 
-    def on_stop_button() -> None:
-        manual_value_var.set(0)
-        motor_cmd.value = 0
-        threading.Thread(
-            target=_send_motor_command,
-            args=(motor_cmd.url, 0, motor_cmd.timeout_s),
-            daemon=True,
-        ).start()
+    tk.Label(manual_frame, text="RIGHT", bg=CARD_BG, fg=MUTED,
+             font=LABEL_FONT).pack(anchor="w", padx=10, pady=(4, 0))
+    scale_right = tk.Scale(manual_frame, from_=-255, to=255, orient="horizontal",
+                            length=220, variable=manual_right_var, command=on_slider_right_change,
+                            bg=CARD_BG, fg="#eee", troughcolor=BG, highlightthickness=0,
+                            state="disabled")
+    scale_right.pack(anchor="w", padx=10)
 
-    tk.Button(manual_frame, text="STOP", command=on_stop_button,
+    tk.Button(manual_frame, text="STOP", command=stop_both,
               bg="#f44", fg="white", font=("Consolas", 10, "bold"),
-              relief="flat").pack(anchor="w", padx=10, pady=(0, 10))
+              relief="flat").pack(anchor="w", padx=10, pady=(6, 10))
 
     manual_frame.pack(fill="x", padx=12, pady=4)
 
@@ -477,8 +506,10 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
                     alt_var.set(f"{payload.alt:.1f}")
                     rpy_var.set(f"R:{payload.roll:6.1f}  P:{payload.pitch:6.1f}  Y:{payload.yaw:6.1f}")
                     gps_var.set(f"{payload.lat:.6f}, {payload.lon:.6f}")
-                    motor_var.set(str(payload.motor))
-                    draw_motor_gauge(payload.motor)
+                    motor_l_var.set(f"L:{payload.motor_l:4d}")
+                    motor_r_var.set(f"R:{payload.motor_r:4d}")
+                    draw_motor_gauge(motor_l_gauge, payload.motor_l)
+                    draw_motor_gauge(motor_r_gauge, payload.motor_r)
                     if dist is not None:
                         dist_var.set(f"{dist:.1f} m  /  {brg:.1f}°")
                     alt_buf.append(payload.alt)
@@ -495,7 +526,7 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
 
     def on_close():
         # 念のため終了時にもモーター停止を送っておく（機体側フェイルセイフの二重化）
-        _send_motor_command(motor_cmd.url, 0, motor_cmd.timeout_s)
+        _send_motor_command(motor_cmd.url, 0, 0, motor_cmd.timeout_s)
         stop_event.set()
         poller.join(timeout=2)
         motor_cmd.join(timeout=2)

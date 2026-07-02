@@ -20,11 +20,12 @@ public:
     //  20      4    float32  lat             double→float32に縮小
     //  24      4    float32  lon             double→float32に縮小
     //  28      1    uint8    mission_state   MissionStateのenum値
-    //  29      2    int16    motor_output    Actuator::setMotor()相当値（-255〜255）
-    static constexpr size_t FRAME_SIZE = 31;
+    //  29      2    int16    motor_output_left   Actuator::setMotorLeft()相当値（-255〜255）
+    //  31      2    int16    motor_output_right  Actuator::setMotorRight()相当値（-255〜255）
+    static constexpr size_t FRAME_SIZE = 33;
 
-    // 地上局からのモーター手動制御コマンド（GET /motor?value=-255〜255）が
-    // この期間 [ms] 以上更新されないと、getMotorCommand() は自動的に0を返す
+    // 地上局からのモーター手動制御コマンド（GET /motor?left=N&right=M、各-255〜255）が
+    // この期間 [ms] 以上更新されないと、getMotorCommandLeft/Right() は自動的に0を返す
     // （WiFi切断・地上局側クラッシュ時にモーターが暴走し続けないためのフェイルセイフ）。
     static constexpr uint32_t MOTOR_COMMAND_TIMEOUT_MS = 1000;
 
@@ -37,7 +38,8 @@ public:
 
     // 地上局から最後に受信したモーター手動制御コマンド（-255〜255）を返す。
     // MOTOR_COMMAND_TIMEOUT_MS以上新しいコマンドが来ていなければ0（フェイルセイフ）。
-    int16_t getMotorCommand();
+    int16_t getMotorCommandLeft();
+    int16_t getMotorCommandRight();
 
     // HTTPリクエストを処理する。loop()/タスク内で毎ティック呼ぶ必須
     // （呼ばないとGETに応答できない）。

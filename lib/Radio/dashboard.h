@@ -59,8 +59,8 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
       </div>
     </div>
     <div class="card">
-      <div class="label">MOTOR OUTPUT</div>
-      <div class="value small"><span id="motor">--</span> / 255</div>
+      <div class="label">MOTOR OUTPUT (L / R)</div>
+      <div class="value small"><span id="motorL">--</span> / <span id="motorR">--</span></div>
     </div>
   </div>
 
@@ -99,7 +99,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
       ctx.fillText(min.toFixed(1) + 'm', 4, h - 4);
     }
 
-    // /data はPULL方式のバイナリフレーム（31バイト、リトルエンディアン）。
+    // /data はPULL方式のバイナリフレーム（33バイト、リトルエンディアン）。
     // レイアウトは lib/Radio/Radio.h のコメントおよび ground/receiver.py と共通。
     const POLL_MS = 150;
     const el = document.getElementById('status');
@@ -107,15 +107,16 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
     function decode(buf) {
       const v = new DataView(buf);
       return {
-        t:     v.getUint32(0, true),
-        alt:   v.getFloat32(4, true),
-        roll:  v.getFloat32(8, true),
-        pitch: v.getFloat32(12, true),
-        yaw:   v.getFloat32(16, true),
-        lat:   v.getFloat32(20, true),
-        lon:   v.getFloat32(24, true),
-        state: v.getUint8(28),
-        motor: v.getInt16(29, true),
+        t:      v.getUint32(0, true),
+        alt:    v.getFloat32(4, true),
+        roll:   v.getFloat32(8, true),
+        pitch:  v.getFloat32(12, true),
+        yaw:    v.getFloat32(16, true),
+        lat:    v.getFloat32(20, true),
+        lon:    v.getFloat32(24, true),
+        state:  v.getUint8(28),
+        motorL: v.getInt16(29, true),
+        motorR: v.getInt16(31, true),
       };
     }
 
@@ -135,7 +136,8 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
         document.getElementById('yaw').textContent   = d.yaw.toFixed(1);
         document.getElementById('lat').textContent   = d.lat.toFixed(6);
         document.getElementById('lon').textContent   = d.lon.toFixed(6);
-        document.getElementById('motor').textContent = d.motor;
+        document.getElementById('motorL').textContent = d.motorL;
+        document.getElementById('motorR').textContent = d.motorR;
         altBuf.push(d.alt);
         if (altBuf.length > MAX_PTS) altBuf.shift();
         drawChart();

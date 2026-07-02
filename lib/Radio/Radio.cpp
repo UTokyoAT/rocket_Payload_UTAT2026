@@ -7,8 +7,9 @@ static WebServer _server(80);
 static uint8_t    _frame[Radio::FRAME_SIZE] = {};
 static size_t     _frameLen = Radio::FRAME_SIZE;
 
-static int16_t  _motorCommand   = 0;
-static uint32_t _motorCommandAt = 0;
+static int16_t  _motorCommandLeft  = 0;
+static int16_t  _motorCommandRight = 0;
+static uint32_t _motorCommandAt    = 0;
 
 void Radio::begin(const char* ssid, const char* password) {
     WiFi.softAP(ssid, password);
@@ -25,14 +26,15 @@ void Radio::begin(const char* ssid, const char* password) {
     // 地上局からのモーター手動制御コマンド（PC→機体のアウトバウンド通信なので
     // /data のPULLと同じ方向。ファイアウォールに阻まれやすいPUSHとは異なる）
     _server.on("/motor", HTTP_GET, []() {
-        if (!_server.hasArg("value")) {
-            _server.send(400, "text/plain", "missing value");
+        if (!_server.hasArg("left") || !_server.hasArg("right")) {
+            _server.send(400, "text/plain", "missing left/right");
             return;
         }
-        long v = _server.arg("value").toInt();
-        v = constrain(v, -255, 255);
-        _motorCommand   = static_cast<int16_t>(v);
-        _motorCommandAt = millis();
+        long l = constrain(_server.arg("left").toInt(),  -255, 255);
+        long r = constrain(_server.arg("right").toInt(), -255, 255);
+        _motorCommandLeft  = static_cast<int16_t>(l);
+        _motorCommandRight = static_cast<int16_t>(r);
+        _motorCommandAt    = millis();
         _server.send(200, "text/plain", "ok");
     });
 
@@ -65,12 +67,18 @@ void Radio::setData(const SensorData& d, MissionState state) {
     uint8_t stateByte = static_cast<uint8_t>(state);
     put(&stateByte, sizeof(stateByte));
 
-    put(&d.motorOutput, sizeof(d.motorOutput));
+    put(&d.motorOutputLeft,  sizeof(d.motorOutputLeft));
+    put(&d.motorOutputRight, sizeof(d.motorOutputRight));
 }
 
-int16_t Radio::getMotorCommand() {
+int16_t Radio::getMotorCommandLeft() {
     if (millis() - _motorCommandAt > MOTOR_COMMAND_TIMEOUT_MS) return 0;
-    return _motorCommand;
+    return _motorCommandLeft;
+}
+
+int16_t Radio::getMotorCommandRight() {
+    if (millis() - _motorCommandAt > MOTOR_COMMAND_TIMEOUT_MS) return 0;
+    return _motorCommandRight;
 }
 
 void Radio::poll() { _server.handleClient(); }

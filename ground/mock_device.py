@@ -1,8 +1,8 @@
 """
 XIAO ESP32S3 実機なしで receiver.py を動作確認するためのモック。
-127.0.0.1 上で GET /data に対し、SensorData を模した31バイトフレームを返し続ける。
-GET /motor?value=N も受け付け、lib/Radio/Radio.h と同じ1秒フェイルセイフで
-motor_output に折り返す（GUIのスライダーの動作確認用）。
+127.0.0.1 上で GET /data に対し、SensorData を模した33バイトフレームを返し続ける。
+GET /motor?left=N&right=M も受け付け、lib/Radio/Radio.h と同じ1秒フェイルセイフで
+motor_output_left/right に折り返す（GUIのスライダーの動作確認用）。
 
 使い方:
     python mock_device.py
@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
 # ground/receiver.py, lib/Radio/Radio.h と同じレイアウト・フォーマット文字列
-FRAME_FMT = "<IffffffBh"
+FRAME_FMT = "<IffffffBhh"
 FRAME_SIZE = struct.calcsize(FRAME_FMT)
 
 # lib/Radio/Radio.h の MOTOR_COMMAND_TIMEOUT_MS と同じ
@@ -27,14 +27,15 @@ HOST = "127.0.0.1"
 PORT = 8000
 
 _start = time.monotonic()
-_motor_command = 0
+_motor_command_left = 0
+_motor_command_right = 0
 _motor_command_at = 0.0
 
 
-def current_motor_output() -> int:
+def current_motor_output() -> tuple[int, int]:
     if time.monotonic() - _motor_command_at > MOTOR_COMMAND_TIMEOUT_S:
-        return 0
-    return _motor_command
+        return 0, 0
+    return _motor_command_left, _motor_command_right
 
 
 def current_frame() -> bytes:
@@ -47,8 +48,9 @@ def current_frame() -> bytes:
     lat = 35.681236 + 0.0002 * math.sin(t * 0.2)
     lon = 139.767125 + 0.0002 * math.cos(t * 0.2)
     state = int(t) // 10 % 6
+    motor_l, motor_r = current_motor_output()
     return struct.pack(FRAME_FMT, timestamp_ms, alt, roll, pitch, yaw, lat, lon, state,
-                        current_motor_output())
+                        motor_l, motor_r)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -56,7 +58,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        global _motor_command, _motor_command_at
+        global _motor_command_left, _motor_command_right, _motor_command_at
 
         parsed = urlparse(self.path)
         if parsed.path == "/data":
@@ -70,14 +72,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/motor":
             qs = parse_qs(parsed.query)
-            if "value" not in qs:
+            if "left" not in qs or "right" not in qs:
                 self.send_response(400)
                 self.end_headers()
                 return
-            value = max(-255, min(255, int(qs["value"][0])))
-            _motor_command = value
+            left = max(-255, min(255, int(qs["left"][0])))
+            right = max(-255, min(255, int(qs["right"][0])))
+            _motor_command_left = left
+            _motor_command_right = right
             _motor_command_at = time.monotonic()
-            print(f"[mock_device] motor command = {value}")
+            print(f"[mock_device] motor command left={left} right={right}")
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()

@@ -13,7 +13,10 @@ static bool _bmp280Ready = false;
 static bool _mpu6050Ready = false;
 static bool _bmm350Ready = false;
 
-static const float kSeaLevelHpa = 1013.25f;
+// 打ち上げ前の地上気圧をbegin()でキャリブレーションし、以後これを基準に高度を計算する
+// （固定の標準大気圧1013.25hPaを使うと、その日の実際の海面気圧とのズレがそのまま
+//   絶対高度の誤差になるため。この方式では「打ち上げ地点からの相対高度」になる）
+static float _groundLevelHpa = 1013.25f;
 
 static float _pressure = 0.0f;
 static float _temperature = 0.0f;
@@ -30,6 +33,17 @@ bool Sensor::begin() {
     _bmp280Ready = _bmp.begin(0x76) || _bmp.begin(0x77);
     if (!_bmp280Ready) {
         Serial.println("[Sensor] BMP280 not found");
+    } else {
+        // 地上（打ち上げ前）の気圧を基準点としてキャリブレーションする。
+        // 複数回サンプリングして平均を取りノイズを減らす。
+        float sum = 0.0f;
+        const int N = 10;
+        for (int i = 0; i < N; i++) {
+            sum += _bmp.readPressure() / 100.0f;  // Pa -> hPa
+            delay(20);
+        }
+        _groundLevelHpa = sum / N;
+        Serial.printf("[Sensor] Ground level pressure calibrated: %.2f hPa\n", _groundLevelHpa);
     }
 
     _mpu6050Ready = _mpu.begin();
@@ -57,7 +71,7 @@ void Sensor::update() {
     if (_bmp280Ready) {
         _pressure    = _bmp.readPressure() / 100.0f;  // Pa -> hPa
         _temperature = _bmp.readTemperature();
-        _altitude    = _bmp.readAltitude(kSeaLevelHpa);
+        _altitude    = _bmp.readAltitude(_groundLevelHpa);
     }
 
     if (_mpu6050Ready) {
@@ -91,7 +105,8 @@ float Sensor::getGyroX()  { return _gyroX; }
 float Sensor::getGyroY()  { return _gyroY; }
 float Sensor::getGyroZ()  { return _gyroZ; }
 
-float Sensor::getAltitude()  { return _altitude; }
+float Sensor::getAltitude()      { return _altitude; }
+float Sensor::getGroundLevelHpa() { return _groundLevelHpa; }
 float Sensor::getRoll()      { return _roll; }
 float Sensor::getPitch()     { return _pitch; }
 float Sensor::getYaw()       { return _yaw; }

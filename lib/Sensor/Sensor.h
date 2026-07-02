@@ -18,7 +18,8 @@ public:
     float getGyroY();
     float getGyroZ();
 
-    float getAltitude();    // [m]
+    float getAltitude();    // [m] begin()時にキャリブレーションした地上気圧からの相対高度
+    float getGroundLevelHpa();  // begin()でキャリブレーションされた基準気圧 [hPa]（診断用）
     float getRoll();        // [deg]
     float getPitch();       // [deg]
     float getYaw();         // [deg] 0-360、北=0（BMM350のコンパス方位。TODO: roll/pitchによるチルト補正）

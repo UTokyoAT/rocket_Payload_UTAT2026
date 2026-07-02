@@ -14,6 +14,12 @@ void setup() {
     sensor.begin();
     if (!sensor.isBmp280Ready()) {
         Serial.println("[TEST] BMP280 not detected. Check wiring (I2C: 0x76/0x77).");
+    } else {
+        // begin()時に地上気圧がキャリブレーションされている（Sensor.cppのコメント参照）。
+        // alt はこの基準からの相対高度になるため、起動直後は0m付近になるはず。
+        Serial.print("[TEST] Ground level calibrated: ");
+        Serial.print(sensor.getGroundLevelHpa());
+        Serial.println("hPa");
     }
 }
 
@@ -24,7 +30,7 @@ void loop() {
     Serial.print(sensor.getPressure());
     Serial.print("hPa  temp=");
     Serial.print(sensor.getTemperature());
-    Serial.print("C  alt=");
+    Serial.print("C  alt(relative)=");
     Serial.print(sensor.getAltitude());
     Serial.println("m");
 

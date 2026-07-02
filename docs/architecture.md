@@ -109,7 +109,7 @@ lib/StateMachine/    ミッションステート遷移ロジック
 ```
 ESP32-S3（SoftAP: CanSat-AP）
     │  GET http://192.168.4.1/data
-    │  31バイト バイナリフレーム（ポーリング間隔 100〜150ms 目安）
+    │  33バイト バイナリフレーム（ポーリング間隔 100〜150ms 目安）
     ▼
 地上PC（ブラウザ or Pythonスクリプト）
     └─ データ記録・リアルタイム表示
@@ -117,9 +117,11 @@ ESP32-S3（SoftAP: CanSat-AP）
 
 `/data` は `Radio::setData()` が更新する最新スナップショットを、リクエストごとに読み直して返す（`Radio::poll()` を呼ぶたびに保留中のHTTPリクエストを処理する）。ブラウザ用の簡易ダッシュボード（`GET /`）も同じ `/data` を`fetch()`でポーリングする。
 
-地上局からのモーター手動制御は `GET /motor?value=-255〜255` で受け付ける（PCから機体へのアウトバウンド方向なので、`/data`のPULLと同じく信頼できる方向）。`Radio::getMotorCommand()` は、`MOTOR_COMMAND_TIMEOUT_MS`（1000ms）以上新しいコマンドが来ていなければ自動的に0を返すフェイルセイフを持つ。地上局側（`ground/receiver.py`）は手動制御が有効な間、250ms間隔でコマンドを送り続けることでこのタイムアウトより十分短い周期を維持する。
+地上局からのモーター手動制御は `GET /motor?left=-255〜255&right=-255〜255` で受け付ける（PCから機体へのアウトバウンド方向なので、`/data`のPULLと同じく信頼できる方向）。`Radio::getMotorCommandLeft()`/`getMotorCommandRight()` は、`MOTOR_COMMAND_TIMEOUT_MS`（1000ms）以上新しいコマンドが来ていなければ自動的に0を返すフェイルセイフを持つ。地上局側（`ground/receiver.py`）は手動制御が有効な間、250ms間隔でコマンドを送り続けることでこのタイムアウトより十分短い周期を維持する。
 
-受信バイナリフレームフォーマット（リトルエンディアン、31バイト。`lib/Radio/Radio.h` と `ground/receiver.py` で共有する契約）：
+なお `tests/test_navigation` はGPS方位とBMM350ヘディングの誤差をPIDで補正し左右モーターへ反映する自律航行の統合確認だが、これはRadioを経由しない（Actuatorを直接駆動するスタンドアロンテスト）。本番の`taskStateMachine`にこのロジックを統合する際は、Radioの手動制御コマンドと自律制御のどちらを優先するかの調停が今後必要になる。
+
+受信バイナリフレームフォーマット（リトルエンディアン、33バイト。`lib/Radio/Radio.h` と `ground/receiver.py` で共有する契約）：
 
 | Offset | Size | 型 | フィールド | 備考 |
 |---|---|---|---|---|
@@ -131,4 +133,5 @@ ESP32-S3（SoftAP: CanSat-AP）
 | 20 | 4 | float32 | lat | 緯度（doubleから縮小） |
 | 24 | 4 | float32 | lon | 経度（doubleから縮小） |
 | 28 | 1 | uint8 | mission_state | `MissionState`のenum値 |
-| 29 | 2 | int16 | motor_output | `Actuator::setMotor()`相当値（-255〜255）。ナビゲーションロジック未実装のため現状は常に0 |
+| 29 | 2 | int16 | motor_output_left | `Actuator::setMotorLeft()`相当値（-255〜255） |
+| 31 | 2 | int16 | motor_output_right | `Actuator::setMotorRight()`相当値（-255〜255） |

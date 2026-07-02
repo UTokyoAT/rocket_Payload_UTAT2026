@@ -21,7 +21,8 @@ struct SensorData {
     double lat  = 0.0;
     double lon  = 0.0;
     uint32_t timestamp_ms = 0;
-    int16_t motorOutput = 0;  // Actuator::setMotor()の現在値（-255〜255）。まだ誰も書き込まないため常に0
+    int16_t motorOutputLeft  = 0;  // Actuator::setMotorLeft()相当値（-255〜255）
+    int16_t motorOutputRight = 0;  // Actuator::setMotorRight()相当値（-255〜255）
 };
 
 struct Shared {
