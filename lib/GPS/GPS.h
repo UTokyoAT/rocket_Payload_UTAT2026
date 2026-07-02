@@ -10,4 +10,7 @@ public:
     double getLon();        // [deg]
     float  getAltitude();   // [m] GPS高度（気圧高度と別）
     bool   isValid();
+
+    float bearingTo(double lat, double lon);    // 現在地から指定座標への方位 [deg, 0-360, 北=0]
+    float distanceTo(double lat, double lon);   // 現在地から指定座標への距離 [m]
 };

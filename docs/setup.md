@@ -2,7 +2,7 @@
 
 ## 使用マイコン
 
-**ESP32-DevKitC（WROOM-32U WROVER）**
+**Seeed Studio XIAO ESP32S3**（ESP32-S3、8MB Flash / 8MB PSRAM）
 
 ---
 
@@ -19,12 +19,7 @@
 
 ## 2. USBドライバのインストール（Windows）
 
-ESP32-DevKitC は **CP2102** または **CH340** チップを使ってUSBシリアル変換をしている。
-
-- CP2102（シルクに"Silicon Labs"）→ [CP210x USB to UART Driver](https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers)
-- CH340（シルクに"CH340"）→ [CH340 Driver](https://www.wch-ic.com/downloads/CH341SER_EXE.html)
-
-ボードを見て判断するか、デバイスマネージャーの「ポート」欄で確認する。
+XIAO ESP32S3 は ESP32-S3 のネイティブUSB（USB CDC）でPCと直接通信するため、CP2102 / CH340 のような外付けドライバは**不要**。USB-Cケーブルで接続すればデバイスマネージャーの「ポート」欄にCOMポートとして認識される。
 
 ---
 

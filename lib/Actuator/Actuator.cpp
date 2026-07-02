@@ -1,40 +1,43 @@
 #include "Actuator.h"
 
-// TODO: 実際のピン番号に変更する
-static const int PIN_MOTOR_IN1  = 25;
-static const int PIN_MOTOR_IN2  = 26;
-static const int PIN_MOTOR_PWM  = 27;
-static const int PIN_PARACHUTE  = 32;
-static const int PIN_SEPARATE   = 33;
-static const int PIN_BUZZER     = 14;
-static const int PIN_LED        = 2;
+// TODO: 実際のピン番号に変更する（XIAO ESP32S3で使えるGPIOはD0〜D10の11本のみ）
+// TB6612FNGのPWMA・PWMB・STBYはハード側で常時HIGHに固定配線しておくこと
+// （2ピン/モーター方式で使わないため、MCU側のピンは消費しない）
+static const int PIN_MOTOR_L_IN1 = 25;
+static const int PIN_MOTOR_L_IN2 = 26;
+static const int PIN_MOTOR_R_IN1 = 27;
+static const int PIN_MOTOR_R_IN2 = 32;
+static const int PIN_PARACHUTE   = 33;
+static const int PIN_SEPARATE    = 14;
+static const int PIN_BUZZER      = 2;
+static const int PIN_LED         = 4;
 
 void Actuator::begin() {
-    pinMode(PIN_MOTOR_IN1,  OUTPUT);
-    pinMode(PIN_MOTOR_IN2,  OUTPUT);
-    pinMode(PIN_MOTOR_PWM,  OUTPUT);
-    pinMode(PIN_PARACHUTE,  OUTPUT);
-    pinMode(PIN_SEPARATE,   OUTPUT);
-    pinMode(PIN_BUZZER,     OUTPUT);
-    pinMode(PIN_LED,        OUTPUT);
+    pinMode(PIN_MOTOR_L_IN1, OUTPUT);
+    pinMode(PIN_MOTOR_L_IN2, OUTPUT);
+    pinMode(PIN_MOTOR_R_IN1, OUTPUT);
+    pinMode(PIN_MOTOR_R_IN2, OUTPUT);
+    pinMode(PIN_PARACHUTE,   OUTPUT);
+    pinMode(PIN_SEPARATE,    OUTPUT);
+    pinMode(PIN_BUZZER,      OUTPUT);
+    pinMode(PIN_LED,         OUTPUT);
 }
 
-void Actuator::setMotor(int speed) {
+// IN1・IN2のどちらか片方だけをPWM出力することで速度・方向を両方指定する
+// （TB6612FNGを2ピン/モーター方式で駆動。もう片方は0=LOW相当にする）
+static void driveMotor(int in1Pin, int in2Pin, int speed) {
     speed = constrain(speed, -255, 255);
-    if (speed > 0) {
-        digitalWrite(PIN_MOTOR_IN1, HIGH);
-        digitalWrite(PIN_MOTOR_IN2, LOW);
-        analogWrite(PIN_MOTOR_PWM, speed);
-    } else if (speed < 0) {
-        digitalWrite(PIN_MOTOR_IN1, LOW);
-        digitalWrite(PIN_MOTOR_IN2, HIGH);
-        analogWrite(PIN_MOTOR_PWM, -speed);
+    if (speed >= 0) {
+        analogWrite(in1Pin, speed);
+        analogWrite(in2Pin, 0);
     } else {
-        digitalWrite(PIN_MOTOR_IN1, LOW);
-        digitalWrite(PIN_MOTOR_IN2, LOW);
-        analogWrite(PIN_MOTOR_PWM, 0);
+        analogWrite(in1Pin, 0);
+        analogWrite(in2Pin, -speed);
     }
 }
+
+void Actuator::setMotorLeft(int speed)  { driveMotor(PIN_MOTOR_L_IN1, PIN_MOTOR_L_IN2, speed); }
+void Actuator::setMotorRight(int speed) { driveMotor(PIN_MOTOR_R_IN1, PIN_MOTOR_R_IN2, speed); }
 
 void Actuator::deployParachute() {
     // TODO: ニクロム線への通電時間・サーボ角度を調整

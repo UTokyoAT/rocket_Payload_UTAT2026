@@ -29,18 +29,18 @@ rocket_Payload_UTAT2026/
 │   └── tasks/
 │       ├── task_sensor.h    # センサー読み取りタスク（50Hz, Core1）
 │       ├── task_gps.h       # GPS受信・パースタスク（Core0）
-│       ├── task_wifi.h      # WebSocket ストリーミングタスク（20Hz, Core0）
+│       ├── task_wifi.h      # HTTP GET配信タスク（PULL方式, 20Hz, Core0）
 │       └── task_statemachine.h  # ステート遷移タスク（10Hz, Core1）
 │
 ├── lib/
 │   ├── Sensor/              # BMP388・ICM-42688・QMC5883 ドライバ＋姿勢フィルタ
 │   ├── GPS/                 # TinyGPSPlus ラッパー
-│   ├── Radio/               # WiFi SoftAP・WebSocket ブロードキャスト
+│   ├── Radio/               # WiFi SoftAP・HTTP GETでバイナリフレーム配信（PULL方式）
 │   ├── Actuator/            # モーター・パラシュート・ブザー・LED制御
 │   └── StateMachine/        # ミッションステート遷移ロジック
 │
 ├── ground/
-│   ├── receiver.py          # WebSocket受信＋CSVロギング
+│   ├── receiver.py          # HTTP GETポーリング受信＋CSVロギング＋Tkinter GUI
 │   ├── requirements.txt
 │   └── logs/                # 保存されたCSVログ（.gitignore推奨）
 │

@@ -58,6 +58,10 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
         <span id="lon">--</span>
       </div>
     </div>
+    <div class="card">
+      <div class="label">MOTOR OUTPUT</div>
+      <div class="value small"><span id="motor">--</span> / 255</div>
+    </div>
   </div>
 
   <div class="card">
@@ -66,7 +70,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
   </div>
 
   <script>
-    const STATE_NAMES = ["STANDBY","ASCENDING","FALLING","SEPARATING","RUNNING","GOAL"];
+    const STATE_NAMES = ["STANDBY","ASCENDING","DESCENDING","SEPARATING","RUNNING","GOAL"];
     const MAX_PTS = 300;
     const altBuf = [];
     const canvas = document.getElementById('chart');
@@ -95,21 +99,35 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
       ctx.fillText(min.toFixed(1) + 'm', 4, h - 4);
     }
 
-    function connect() {
-      const ws = new WebSocket('ws://' + location.host + '/ws');
-      const el = document.getElementById('status');
+    // /data はPULL方式のバイナリフレーム（31バイト、リトルエンディアン）。
+    // レイアウトは lib/Radio/Radio.h のコメントおよび ground/receiver.py と共通。
+    const POLL_MS = 150;
+    const el = document.getElementById('status');
 
-      ws.onopen = () => {
-        el.textContent = '● connected';
+    function decode(buf) {
+      const v = new DataView(buf);
+      return {
+        t:     v.getUint32(0, true),
+        alt:   v.getFloat32(4, true),
+        roll:  v.getFloat32(8, true),
+        pitch: v.getFloat32(12, true),
+        yaw:   v.getFloat32(16, true),
+        lat:   v.getFloat32(20, true),
+        lon:   v.getFloat32(24, true),
+        state: v.getUint8(28),
+        motor: v.getInt16(29, true),
+      };
+    }
+
+    async function poll() {
+      try {
+        const res = await fetch('/data', { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const d = decode(await res.arrayBuffer());
+
+        el.textContent = '● reachable';
         el.className = 'connected';
-      };
-      ws.onclose = () => {
-        el.textContent = '● disconnected';
-        el.className = 'disconnected';
-        setTimeout(connect, 2000);
-      };
-      ws.onmessage = ({ data }) => {
-        const d = JSON.parse(data);
+
         document.getElementById('state').textContent = STATE_NAMES[d.state] ?? d.state;
         document.getElementById('alt').textContent   = d.alt.toFixed(1);
         document.getElementById('roll').textContent  = d.roll.toFixed(1);
@@ -117,13 +135,19 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
         document.getElementById('yaw').textContent   = d.yaw.toFixed(1);
         document.getElementById('lat').textContent   = d.lat.toFixed(6);
         document.getElementById('lon').textContent   = d.lon.toFixed(6);
+        document.getElementById('motor').textContent = d.motor;
         altBuf.push(d.alt);
         if (altBuf.length > MAX_PTS) altBuf.shift();
         drawChart();
-      };
+      } catch (e) {
+        el.textContent = '● unreachable';
+        el.className = 'disconnected';
+      } finally {
+        setTimeout(poll, POLL_MS);
+      }
     }
 
-    connect();
+    poll();
     window.addEventListener('resize', drawChart);
   </script>
 </body>

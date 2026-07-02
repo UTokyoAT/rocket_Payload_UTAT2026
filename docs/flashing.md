@@ -2,7 +2,7 @@
 
 ## 1. ボードをPCに接続
 
-USBケーブルで ESP32-DevKitC を接続する。
+USB-Cケーブルで XIAO ESP32S3 を接続する。
 
 デバイスマネージャー（またはターミナル）でCOMポートが認識されているか確認する。
 
@@ -18,7 +18,7 @@ USBケーブルで ESP32-DevKitC を接続する。
 **VS Code の PlatformIO サイドバー（アリのアイコン）から操作する：**
 
 ```
-PlatformIO サイドバー → PROJECT TASKS → esp32-wrover
+PlatformIO サイドバー → PROJECT TASKS → esp32-s3
   ├─ Build       ← コンパイルのみ
   ├─ Upload      ← ビルド＋書き込み
   └─ Monitor     ← シリアルモニタ（115200 baud）
@@ -36,10 +36,10 @@ PlatformIO サイドバー → PROJECT TASKS → esp32-wrover
 
 ## 3. 書き込みに失敗する場合
 
-ESP32 は書き込み時に **BOOTボタンを押しながらENボタンを押す**（またはBOOTを押し続けてUpload開始）と強制的に書き込みモードになる。
+XIAO ESP32S3 はネイティブUSBの自動リセットで通常は書き込みモードに入るが、失敗する場合は基板上の **BOOTボタン（Bと刻印）を押しながらUSBケーブルを挿す**（またはUploadを開始してから数秒BOOTを押し続ける）と強制的に書き込みモードになる。
 
 ```
-書き込み開始のログが出た直後に BOOTボタンを押す → 離す
+Upload開始のログが出た直後に BOOTボタンを押す → 離す
 ```
 
 `platformio.ini` でポートを固定したい場合：

@@ -2,7 +2,7 @@
 #include <Radio.h>
 #include "shared.h"
 
-// ダミーデータをWebSocketで20Hz送信するテスト
+// ダミーデータを /data で20Hz公開するテスト（PULL方式、PC側がGETしにくる）
 // PlatformIO で env:test-wifi を選択して書き込む
 
 static Radio radio;
@@ -11,6 +11,8 @@ static Radio radio;
 // 姿勢：ゆるやかに揺れる
 // GPS ：定点から小さく円を描く
 // state：10秒ごとに自動遷移
+// motorOutput：地上局から /motor で受信した手動制御コマンドをそのまま折り返す
+//              （GUIのスライダーを動かすとテレメトリに反映される様子を確認できる）
 
 void setup() {
     Serial.begin(115200);
@@ -30,6 +32,7 @@ void loop() {
     d.yaw   = fmodf(t * 36.0f, 360.0f);                 // 10秒で一周
     d.lat   = 35.681236 + 0.0002 * sinf(t * 0.2f);
     d.lon   = 139.767125 + 0.0002 * cosf(t * 0.2f);
+    d.motorOutput = radio.getMotorCommand();
 
     // 10秒ごとに次のステートへ自動遷移（ループ）
     const int stateCount = 6;
@@ -37,8 +40,8 @@ void loop() {
         (static_cast<int>(t) / 10) % stateCount
     );
 
-    radio.broadcast(d, state);
-    radio.cleanup();
+    radio.setData(d, state);
+    radio.poll();
 
     delay(50);  // 20Hz
 }

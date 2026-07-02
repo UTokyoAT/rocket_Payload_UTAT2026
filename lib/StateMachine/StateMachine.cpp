@@ -18,10 +18,10 @@ MissionState StateMachine::update(const SensorData& d) {
 
         case MissionState::ASCENDING:
             if (d.alt < DESCENT_ALT_M || d.getAccelMag() > IMPACT_ACCEL_MS2)
-                transition(MissionState::FALLING);
+                transition(MissionState::DESCENDING);
             break;
 
-        case MissionState::FALLING:
+        case MissionState::DESCENDING:
             if (d.alt < LAND_ALT_M)
                 transition(MissionState::SEPARATING);
             break;

@@ -17,3 +17,11 @@ double GPS::getLat()      { return _gps.location.lat(); }
 double GPS::getLon()      { return _gps.location.lng(); }
 float  GPS::getAltitude() { return (float)_gps.altitude.meters(); }
 bool   GPS::isValid()     { return _gps.location.isValid(); }
+
+float GPS::bearingTo(double lat, double lon) {
+    return (float)TinyGPSPlus::courseTo(getLat(), getLon(), lat, lon);
+}
+
+float GPS::distanceTo(double lat, double lon) {
+    return (float)TinyGPSPlus::distanceBetween(getLat(), getLon(), lat, lon);
+}

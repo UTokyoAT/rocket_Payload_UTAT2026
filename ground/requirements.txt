@@ -1,1 +1,5 @@
-websockets>=12.0
+# 標準ライブラリ（urllib, struct, csv, threading）のほか、GUIに以下を使用する:
+#   - tkinter    : python.org配布のWindows版インストーラに標準同梱
+#   - matplotlib : 現在地・向き・目的地マップの描画に使用（pip install が必要）
+# どちらかが無い環境では `python receiver.py --headless` でCSV+ターミナルのみ動作する。
+matplotlib>=3.8
