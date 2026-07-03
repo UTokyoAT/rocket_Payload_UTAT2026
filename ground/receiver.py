@@ -295,7 +295,8 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
     right.grid(row=0, column=1, sticky="nsew")
     right.rowconfigure(0, weight=1)
     right.rowconfigure(1, weight=2)
-    right.columnconfigure(0, weight=1)
+    right.columnconfigure(0, weight=3)  # マップ（広め）
+    right.columnconfigure(1, weight=1)  # 手動モーター制御（右下）
 
     tk.Label(left, textvariable=status_var, bg=BG, fg="#f44",
              font=FONT).pack(anchor="w", padx=12, pady=(10, 4))
@@ -342,8 +343,8 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
 
     card(left, "目的地までの距離 / 方位", dist_var, value_font=("Consolas", 13))
 
-    # ─── 手動モーター制御（左右独立） ───
-    manual_frame = tk.Frame(left, bg=CARD_BG)
+    # ─── 手動モーター制御（左右独立、画面右下に配置） ───
+    manual_frame = tk.Frame(right, bg=CARD_BG)
     tk.Label(manual_frame, text="手動モーター制御", bg=CARD_BG, fg=MUTED,
              font=LABEL_FONT).pack(anchor="w", padx=10, pady=(8, 2))
 
@@ -377,35 +378,35 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
         if not enabled:
             stop_both()
 
-    tk.Checkbutton(manual_frame, text="有効にする（機体のモーターが実際に動きます）",
+    tk.Checkbutton(manual_frame, text="有効にする\n（実際にモーターが動きます）",
                    variable=manual_enabled_var, command=on_toggle_enable,
                    bg=CARD_BG, fg="#eee", selectcolor=BG, activebackground=CARD_BG,
-                   font=LABEL_FONT).pack(anchor="w", padx=10)
+                   justify="left", font=LABEL_FONT).pack(anchor="w", padx=10)
 
     tk.Label(manual_frame, text="LEFT", bg=CARD_BG, fg=MUTED,
              font=LABEL_FONT).pack(anchor="w", padx=10, pady=(4, 0))
     scale_left = tk.Scale(manual_frame, from_=-255, to=255, orient="horizontal",
-                           length=220, variable=manual_left_var, command=on_slider_left_change,
+                           length=160, variable=manual_left_var, command=on_slider_left_change,
                            bg=CARD_BG, fg="#eee", troughcolor=BG, highlightthickness=0,
                            state="disabled")
-    scale_left.pack(anchor="w", padx=10)
+    scale_left.pack(anchor="w", padx=10, fill="x")
 
     tk.Label(manual_frame, text="RIGHT", bg=CARD_BG, fg=MUTED,
              font=LABEL_FONT).pack(anchor="w", padx=10, pady=(4, 0))
     scale_right = tk.Scale(manual_frame, from_=-255, to=255, orient="horizontal",
-                            length=220, variable=manual_right_var, command=on_slider_right_change,
+                            length=160, variable=manual_right_var, command=on_slider_right_change,
                             bg=CARD_BG, fg="#eee", troughcolor=BG, highlightthickness=0,
                             state="disabled")
-    scale_right.pack(anchor="w", padx=10)
+    scale_right.pack(anchor="w", padx=10, fill="x")
 
     tk.Button(manual_frame, text="STOP", command=stop_both,
               bg="#f44", fg="white", font=("Consolas", 10, "bold"),
               relief="flat").pack(anchor="w", padx=10, pady=(6, 10))
 
-    manual_frame.pack(fill="x", padx=12, pady=4)
+    manual_frame.grid(row=1, column=1, sticky="nsew", padx=(6, 12), pady=(6, 12))
 
     canvas = tk.Canvas(right, bg=BG, height=180, highlightthickness=0)
-    canvas.grid(row=0, column=0, sticky="nsew", padx=12, pady=(12, 6))
+    canvas.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=12, pady=(12, 6))
 
     def draw_chart():
         canvas.delete("all")
