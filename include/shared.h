@@ -29,4 +29,8 @@ struct Shared {
     SemaphoreHandle_t mutex;
     SensorData latest;
     MissionState state = MissionState::STANDBY;
+
+    // 地上局からのWiFi手動操作コマンド（taskWifiが書き込み、taskSpiLinkがXIAO2へ転送する）
+    int16_t manualMotorLeft  = 0;
+    int16_t manualMotorRight = 0;
 };

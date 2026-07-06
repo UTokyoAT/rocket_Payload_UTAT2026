@@ -21,8 +21,17 @@ void taskWifi(void* arg) {
             xSemaphoreGive(s->mutex);
         }
 
-        radio.broadcast(d, state);
-        radio.cleanup();
+        radio.setData(d, state);
+        radio.poll();
+
+        // 地上局からの手動操作コマンドをSharedへ書き戻す（taskSpiLinkがXIAO2へ転送する）
+        int16_t left  = radio.getMotorCommandLeft();
+        int16_t right = radio.getMotorCommandRight();
+        if (xSemaphoreTake(s->mutex, pdMS_TO_TICKS(5))) {
+            s->manualMotorLeft  = left;
+            s->manualMotorRight = right;
+            xSemaphoreGive(s->mutex);
+        }
 
         vTaskDelayUntil(&last, pdMS_TO_TICKS(50));  // 20Hz
     }

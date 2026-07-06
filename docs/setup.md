@@ -2,7 +2,7 @@
 
 ## 使用マイコン
 
-**Seeed Studio XIAO ESP32S3**（ESP32-S3、8MB Flash / 8MB PSRAM）
+**Seeed Studio XIAO ESP32S3**（ESP32-S3、8MB Flash / 8MB PSRAM）を **2枚** 使用し、SPIで接続する（GPIO数の都合上、センサー・GPS・WiFi担当のXIAO1と、モータPID制御・誘導担当のXIAO2に役割を分けている）。詳細は [architecture.md](architecture.md) を参照。
 
 ---
 
