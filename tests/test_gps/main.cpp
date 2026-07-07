@@ -28,10 +28,15 @@ void loop() {
         _lastPrintMs = now;
 
         if (gps.isValid()) {
-            Serial.printf("lat=%.6f lon=%.6f alt=%.1fm\n",
-                          gps.getLat(), gps.getLon(), gps.getAltitude());
+            Serial.printf("lat=%.6f lon=%.6f alt=%.1fm sats=%d hdop=%.1f\n",
+                          gps.getLat(), gps.getLon(), gps.getAltitude(),
+                          gps.satellites(), gps.hdop());
+        } else if (gps.charsProcessed() < 10) {
+            Serial.println("[TEST] no data received at all... (wiring: D6->GPS RX, D7<-GPS TX / 電源を確認)");
         } else {
-            Serial.println("[TEST] waiting for GPS fix... (wiring: D6->GPS RX, D7<-GPS TX を確認)");
+            Serial.printf("[TEST] waiting for fix... chars=%lu sats=%d hdop=%.1f failedChecksum=%lu\n",
+                          (unsigned long)gps.charsProcessed(), gps.satellites(), gps.hdop(),
+                          (unsigned long)gps.failedChecksumCount());
         }
     }
 }
