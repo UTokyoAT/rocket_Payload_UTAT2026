@@ -2,9 +2,9 @@
 #include "shared.h"
 #include <GPS.h>
 
-// TODO: 実際のピン番号に変更する
-static const int GPS_RX_PIN = 16;
-static const int GPS_TX_PIN = 17;
+// XIAO ESP32S3: D7(GPIO44)にGPSモジュールのTXを、D6(GPIO43)にGPSモジュールのRXを接続
+static const int GPS_RX_PIN = 44;  // D7
+static const int GPS_TX_PIN = 43;  // D6
 
 void taskGPS(void* arg) {
     Shared* s = static_cast<Shared*>(arg);

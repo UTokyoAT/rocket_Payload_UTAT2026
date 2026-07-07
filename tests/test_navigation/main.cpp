@@ -14,9 +14,9 @@
 static const double GOAL_LAT = 35.681236;
 static const double GOAL_LON = 139.767125;
 
-// TODO: 実際のピン番号に変更する（src/tasks/task_gps.h と合わせる）
-static const int GPS_RX_PIN = 16;
-static const int GPS_TX_PIN = 17;
+// XIAO ESP32S3: D7(GPIO44)にGPSモジュールのTXを、D6(GPIO43)にGPSモジュールのRXを接続
+static const int GPS_RX_PIN = 44;  // D7
+static const int GPS_TX_PIN = 43;  // D6
 
 static const int BASE_SPEED = 150;  // 直進基準速度（-255〜255）
 
