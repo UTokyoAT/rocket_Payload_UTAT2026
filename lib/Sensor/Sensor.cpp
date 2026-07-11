@@ -48,6 +48,32 @@ bool Sensor::begin() {
 
     _mpu6050Ready = _mpu.begin();
     if (!_mpu6050Ready) {
+        // Adafruit_MPU6050::begin()はWHO_AM_Iが0x68固定でないと弾くが、
+        // i2c_devの生成自体はそのチェックより前に行われているため、
+        // MPU6050互換チップ（MPU6500/MPU9250系。ロット差でWHO_AM_Iが
+        // 0x68以外になることがある）であれば以降のレジスタ操作は問題なく動く。
+        // 生I2CでWHO_AM_Iを読み、互換範囲なら手動初期化にフォールバックする。
+        Wire.beginTransmission(MPU6050_I2CADDR_DEFAULT);
+        Wire.write(0x75);  // WHO_AM_I register
+        if (Wire.endTransmission(false) == 0 &&
+            Wire.requestFrom((uint8_t)MPU6050_I2CADDR_DEFAULT, (uint8_t)1) == 1) {
+            uint8_t whoAmI = Wire.read();
+            if (whoAmI >= 0x68 && whoAmI <= 0x73) {
+                _mpu.reset();
+                // reset()直後はPWR_MGMT_1がデフォルト値(SLEEPビット=1)に戻り測定が止まった
+                // ままになるため、クロックをPLL(Gyro X基準)に設定してスリープを解除する。
+                Wire.beginTransmission(MPU6050_I2CADDR_DEFAULT);
+                Wire.write(MPU6050_PWR_MGMT_1);
+                Wire.write(0x01);
+                Wire.endTransmission();
+                delay(100);
+                _mpu6050Ready = true;
+                Serial.printf("[Sensor] MPU6050-compatible chip detected (WHO_AM_I=0x%02X), using manual init\n", whoAmI);
+            }
+        }
+    }
+
+    if (!_mpu6050Ready) {
         Serial.println("[Sensor] MPU6050 not found");
     } else {
         _mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
@@ -86,8 +112,9 @@ void Sensor::update() {
         _gyroZ  = g.gyro.z * RAD_TO_DEG;
 
         // 加速度のみによる簡易姿勢角（相補フィルタはTODO）
-        _roll  = atan2f(_accelY, _accelZ) * RAD_TO_DEG;
-        _pitch = atan2f(-_accelX, sqrtf(_accelY * _accelY + _accelZ * _accelZ)) * RAD_TO_DEG;
+        // 実機のマウント方向: X=鉛直上向き, Z=進行方向前向き, Y=横方向
+        _roll  = atan2f(_accelY, _accelX) * RAD_TO_DEG;
+        _pitch = atan2f(-_accelZ, sqrtf(_accelY * _accelY + _accelX * _accelX)) * RAD_TO_DEG;
     }
 
     if (_bmm350Ready) {

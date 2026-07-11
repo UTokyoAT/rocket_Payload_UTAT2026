@@ -20,6 +20,10 @@ void setup() {
 void loop() {
     sensor.update();
 
+    Serial.print("[mpu ready=");
+    Serial.print(sensor.isMpu6050Ready() ? "OK" : "NG");
+    Serial.print("] ");
+
     Serial.print("accel[m/s^2] x=");
     Serial.print(sensor.getAccelX());
     Serial.print(" y=");
