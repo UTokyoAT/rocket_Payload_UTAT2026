@@ -5737,7 +5737,7 @@
 				)
 			)
 		)
-		(property "Value" "LM317_TO-220"
+		(property "Value" "BA50DD0T"
 			(at 83.82 26.67 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -5822,7 +5822,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "0.33"
+		(property "Value" "22"
 			(at 97.79 35.5599 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -5833,7 +5833,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_THT:CP_Radial_Tantal_D5.0mm_P2.50mm"
+		(property "Footprint" "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm"
 			(at 94.9452 38.1 0)
 			(hide yes)
 			(show_name no)
@@ -6642,7 +6642,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "my_footprint:NEO6M_PinSocket_Vertical"
+		(property "Footprint" "my_footprint:GY-GPSV2-NEO6M"
 			(at 128.27 55.88 0)
 			(hide yes)
 			(show_name no)
@@ -8228,7 +8228,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_THT:CP_Radial_Tantal_D5.0mm_P2.50mm"
+		(property "Footprint" "Capacitor_THT:CP_Radial_Tantal_D4.5mm_P5.00mm"
 			(at 73.3552 38.1 0)
 			(hide yes)
 			(show_name no)
