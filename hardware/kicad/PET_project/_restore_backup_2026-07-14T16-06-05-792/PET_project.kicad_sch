@@ -4559,16 +4559,6 @@
 	)
 	(wire
 		(pts
-			(xy 68.58 107.95) (xy 68.58 111.76)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5ade3c65-1894-4b78-95bc-e747fcfd3fd5")
-	)
-	(wire
-		(pts
 			(xy 219.71 54.61) (xy 226.06 54.61)
 		)
 		(stroke
@@ -4806,16 +4796,6 @@
 			(type default)
 		)
 		(uuid "b35ccf34-58a8-413f-8ca9-cd07ee6e6a03")
-	)
-	(wire
-		(pts
-			(xy 63.5 100.33) (xy 68.58 100.33)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b65b7796-fb57-46c4-88e1-c6fe01a0a38e")
 	)
 	(wire
 		(pts
@@ -6240,88 +6220,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:C")
-		(at 68.58 104.14 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "25ef6a0a-d2c9-4a5a-a24c-d625c5e3d740")
-		(property "Reference" "C3"
-			(at 72.39 102.8699 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "C"
-			(at 72.39 105.4099 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm"
-			(at 69.5452 107.95 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 68.58 104.14 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Unpolarized capacitor"
-			(at 68.58 104.14 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "5e885caa-1044-4033-af4f-daa7af648ea4")
-		)
-		(pin "2"
-			(uuid "c9408b50-7c21-4e1f-9447-1eee2959601b")
-		)
-		(instances
-			(project "PET_project"
-				(path "/de26d571-f6ef-427c-bc25-8e6a6d3b46d4"
-					(reference "C3")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "power:GND")
 		(at 83.82 38.1 0)
 		(unit 1)
@@ -6965,84 +6863,6 @@
 			(project "PET_project"
 				(path "/de26d571-f6ef-427c-bc25-8e6a6d3b46d4"
 					(reference "#PWR027")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 63.5 100.33 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "436497dc-2e84-4e98-b7a2-f67ebb633fc0")
-		(property "Reference" "#PWR013"
-			(at 63.5 106.68 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "GND"
-			(at 63.5 105.41 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 63.5 100.33 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 63.5 100.33 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 63.5 100.33 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "b9c2e54b-2a8b-4fab-b323-348644cfd724")
-		)
-		(instances
-			(project "PET_project"
-				(path "/de26d571-f6ef-427c-bc25-8e6a6d3b46d4"
-					(reference "#PWR013")
 					(unit 1)
 				)
 			)

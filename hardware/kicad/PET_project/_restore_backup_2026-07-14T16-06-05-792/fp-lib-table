@@ -1,0 +1,6 @@
+(fp_lib_table
+	(version 7)
+	(lib (name "ESP32_DevKitC") (type "KiCad") (uri "C:/Users/hirof/OneDrive - The University of Tokyo/ドキュメント/KiCad/10.0/footprints/my_footprint.pretty/ESP32_DevKitC.pretty") (options "") (descr ""))
+	(lib (name "XIAO-ESP") (type "KiCad") (uri "C:/Users/hirof/OneDrive - The University of Tokyo/ドキュメント/KiCad/10.0/footprints/my_footprint.pretty/XIAO-ESP.pretty") (options "") (descr ""))
+	(lib (name "my_footprint") (type "KiCad") (uri "C:/Users/hirof/OneDrive - The University of Tokyo/ドキュメント/KiCad/10.0/footprints/my_footprint.pretty") (options "") (descr ""))
+)
