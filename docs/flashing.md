@@ -4,8 +4,8 @@
 
 | 基板 | 役割 | PlatformIO env |
 |---|---|---|
-| XIAO1 | センサー・GPS・WiFi（マスター） | `xiao1` |
-| XIAO2 | モータPID制御・誘導（スレーブ） | `xiao2` |
+| XIAO1 | センサー・GPS・誘導PID計算（SPIマスター） | `xiao1` |
+| XIAO2 | モータ駆動・WiFiテレメトリ中継（SPIスレーブ） | `xiao2` |
 
 ---
 

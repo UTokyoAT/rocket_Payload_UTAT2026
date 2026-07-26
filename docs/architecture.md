@@ -12,7 +12,7 @@ XIAO1 ────────────────────────�
 
 | | XIAO1（マスター） | XIAO2（スレーブ） |
 |---|---|---|
-| 役割 | センサー読み取り・GPS・誘導フュージョン・PID制御 | モーター駆動・WiFi通信（テレメトリ配信・手動操作受信） |
+| 役割 | センサー読み取り・GPS・誘導フュージョン・PID計算 | モーター駆動・WiFi通信（テレメトリ配信・手動操作受信） |
 | 実装方式 | デュアルコア＋FreeRTOSタスク（`loop()`は使わない） | シンプルな`setup()`/`loop()` |
 | 主なlib | Sensor, GPS, PID, SpiLinkMaster | Radio, Actuator, SpiLinkSlave |
 | PlatformIO env | `xiao1` | `xiao2` |
