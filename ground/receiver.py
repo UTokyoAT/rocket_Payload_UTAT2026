@@ -35,24 +35,25 @@ from collections import namedtuple
 from datetime import datetime
 from pathlib import Path
 
-# ─── バイナリフレームレイアウト（機体側 lib/Radio/Radio.h と共有する契約）───
-# 33バイト、リトルエンディアン。
-#   offset  size  type     field               note
+# ─── バイナリフレームレイアウト（機体側 include/spi_protocol.h の SpiFrameToXiao2 と共有する契約）───
+# XIAO1がSPIでXIAO2へ送るフレームを、XIAO2がそのままWiFiで中継している。
+# 37バイト、リトルエンディアン。
+#   offset  size  type     field            note
 #     0      4    uint32   timestamp_ms
-#     4      4    float32  alt                 [m]
-#     8      4    float32  roll                [deg]
-#    12      4    float32  pitch               [deg]
-#    16      4    float32  yaw                 [deg]
-#    20      4    float32  lat                 double→float32に縮小
-#    24      4    float32  lon                 double→float32に縮小
+#     4      4    float32  alt              [m]
+#     8      4    float32  roll             [deg]
+#    12      4    float32  pitch            [deg]
+#    16      4    float32  yaw              [deg]
+#    20      4    float32  lat              double→float32に縮小
+#    24      4    float32  lon              double→float32に縮小
 #    28      1    uint8    mission_state
-#    29      2    int16    motor_output_left   Actuator::setMotorLeft()相当値（-255〜255）
-#    31      2    int16    motor_output_right  Actuator::setMotorRight()相当値（-255〜255）
-FRAME_FMT = "<IffffffBhh"
-FRAME_SIZE = struct.calcsize(FRAME_FMT)  # 33
+#    29      4    float32  pid_output       誘導PIDの旋回量（-255〜255）
+#    33      4    float32  destination_yaw  目的地への方位角 [deg]（磁北基準）
+FRAME_FMT = "<IffffffBff"
+FRAME_SIZE = struct.calcsize(FRAME_FMT)  # 37
 
 Frame = namedtuple("Frame", ["t", "alt", "roll", "pitch", "yaw", "lat", "lon", "state",
-                              "motor_l", "motor_r"])
+                              "pid_output", "destination_yaw"])
 
 STATE_NAMES = {
     0: "STANDBY",
@@ -64,7 +65,7 @@ STATE_NAMES = {
 }
 
 CSV_HEADER = ["timestamp_ms", "alt_m", "roll_deg", "pitch_deg", "yaw_deg",
-              "lat", "lon", "state", "motor_output_left", "motor_output_right",
+              "lat", "lon", "state", "pid_output", "destination_yaw_deg",
               "dist_to_dest_m", "bearing_to_dest_deg"]
 
 LOG_DIR = Path(__file__).parent / "logs"
@@ -107,7 +108,8 @@ def fmt(frame: Frame, dist_m: float | None, brg: float | None) -> str:
         f"\r[{state_name:<12}] "
         f"alt={frame.alt:7.2f}m  "
         f"R={frame.roll:6.1f}°  P={frame.pitch:6.1f}°  Y={frame.yaw:6.1f}°  "
-        f"GPS={frame.lat:.5f},{frame.lon:.5f}  ML={frame.motor_l:4d} MR={frame.motor_r:4d}"
+        f"GPS={frame.lat:.5f},{frame.lon:.5f}  "
+        f"PID={frame.pid_output:6.1f}  DESTYAW={frame.destination_yaw:6.1f}°"
     )
     if dist_m is not None:
         line += f"  DIST={dist_m:7.1f}m BRG={brg:5.1f}°"
@@ -191,7 +193,7 @@ class Recorder:
         self._writer.writerow([
             frame.t, frame.alt, frame.roll, frame.pitch, frame.yaw,
             frame.lat, frame.lon, STATE_NAMES.get(frame.state, frame.state),
-            frame.motor_l, frame.motor_r,
+            frame.pid_output, frame.destination_yaw,
             "" if dist_m is None else f"{dist_m:.2f}",
             "" if brg is None else f"{brg:.1f}",
         ])
@@ -281,8 +283,8 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
     alt_var = tk.StringVar(value="--")
     rpy_var = tk.StringVar(value="--")
     gps_var = tk.StringVar(value="--")
-    motor_l_var = tk.StringVar(value="--")
-    motor_r_var = tk.StringVar(value="--")
+    pid_var = tk.StringVar(value="--")
+    dest_yaw_var = tk.StringVar(value="--")
     dist_var = tk.StringVar(value="--" if dest.dest is None else "取得中...")
 
     root.columnconfigure(0, weight=0)
@@ -331,14 +333,15 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
         gauge.create_rectangle(cx, 2, cx + bw, h - 2, fill=color, outline="")
 
     motor_card = tk.Frame(left, bg=CARD_BG)
-    tk.Label(motor_card, text="MOTOR OUTPUT (L / R)", bg=CARD_BG, fg=MUTED,
+    tk.Label(motor_card, text="PID OUTPUT (turn)", bg=CARD_BG, fg=MUTED,
              font=LABEL_FONT).pack(anchor="w", padx=10, pady=(8, 2))
-    tk.Label(motor_card, textvariable=motor_l_var, bg=CARD_BG, fg=ACCENT,
+    tk.Label(motor_card, textvariable=pid_var, bg=CARD_BG, fg=ACCENT,
               font=("Consolas", 14, "bold")).pack(anchor="w", padx=10)
-    motor_l_gauge = make_motor_gauge(motor_card)
-    tk.Label(motor_card, textvariable=motor_r_var, bg=CARD_BG, fg=ACCENT,
+    pid_gauge = make_motor_gauge(motor_card)
+    tk.Label(motor_card, text="DEST YAW（磁北基準）", bg=CARD_BG, fg=MUTED,
+             font=LABEL_FONT).pack(anchor="w", padx=10, pady=(6, 2))
+    tk.Label(motor_card, textvariable=dest_yaw_var, bg=CARD_BG, fg=ACCENT,
               font=("Consolas", 14, "bold")).pack(anchor="w", padx=10)
-    motor_r_gauge = make_motor_gauge(motor_card)
     motor_card.pack(fill="x", padx=12, pady=4)
 
     card(left, "目的地までの距離 / 方位", dist_var, value_font=("Consolas", 13))
@@ -507,10 +510,9 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
                     alt_var.set(f"{payload.alt:.1f}")
                     rpy_var.set(f"R:{payload.roll:6.1f}  P:{payload.pitch:6.1f}  Y:{payload.yaw:6.1f}")
                     gps_var.set(f"{payload.lat:.6f}, {payload.lon:.6f}")
-                    motor_l_var.set(f"L:{payload.motor_l:4d}")
-                    motor_r_var.set(f"R:{payload.motor_r:4d}")
-                    draw_motor_gauge(motor_l_gauge, payload.motor_l)
-                    draw_motor_gauge(motor_r_gauge, payload.motor_r)
+                    pid_var.set(f"{payload.pid_output:6.1f}")
+                    dest_yaw_var.set(f"{payload.destination_yaw:6.1f}°")
+                    draw_motor_gauge(pid_gauge, int(payload.pid_output))
                     if dist is not None:
                         dist_var.set(f"{dist:.1f} m  /  {brg:.1f}°")
                     alt_buf.append(payload.alt)

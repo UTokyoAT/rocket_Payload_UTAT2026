@@ -1,8 +1,8 @@
 """
 XIAO ESP32S3 実機なしで receiver.py を動作確認するためのモック。
-127.0.0.1 上で GET /data に対し、SensorData を模した33バイトフレームを返し続ける。
+127.0.0.1 上で GET /data に対し、SpiFrameToXiao2 を模した37バイトフレームを返し続ける。
 GET /motor?left=N&right=M も受け付け、lib/Radio/Radio.h と同じ1秒フェイルセイフで
-motor_output_left/right に折り返す（GUIのスライダーの動作確認用）。
+pid_output（left側の値）に折り返す（GUIのスライダーの動作確認用）。
 
 使い方:
     python mock_device.py
@@ -16,8 +16,8 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-# ground/receiver.py, lib/Radio/Radio.h と同じレイアウト・フォーマット文字列
-FRAME_FMT = "<IffffffBhh"
+# ground/receiver.py, include/spi_protocol.h (SpiFrameToXiao2) と同じレイアウト・フォーマット文字列
+FRAME_FMT = "<IffffffBff"
 FRAME_SIZE = struct.calcsize(FRAME_FMT)
 
 # lib/Radio/Radio.h の MOTOR_COMMAND_TIMEOUT_MS と同じ
@@ -48,9 +48,11 @@ def current_frame() -> bytes:
     lat = 35.681236 + 0.0002 * math.sin(t * 0.2)
     lon = 139.767125 + 0.0002 * math.cos(t * 0.2)
     state = int(t) // 10 % 6
-    motor_l, motor_r = current_motor_output()
+    motor_l, _motor_r = current_motor_output()
+    pid_output = float(motor_l)
+    destination_yaw = (t * 10.0) % 360.0 - 180.0
     return struct.pack(FRAME_FMT, timestamp_ms, alt, roll, pitch, yaw, lat, lon, state,
-                        motor_l, motor_r)
+                        pid_output, destination_yaw)
 
 
 class Handler(BaseHTTPRequestHandler):

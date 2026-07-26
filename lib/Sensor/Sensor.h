@@ -4,7 +4,7 @@
 class Sensor {
 public:
     bool begin();
-    void update();          // 50Hz で呼ぶ（IMU・気圧読み取り＋フィルタ）
+    void update();          // 100Hz目安で呼ぶ（IMU・気圧・地磁気読み取り＋姿勢フィルタ）
 
     // BMP280（気圧）生値
     float getPressure();    // [hPa]
@@ -20,9 +20,9 @@ public:
 
     float getAltitude();    // [m] begin()時にキャリブレーションした地上気圧からの相対高度
     float getGroundLevelHpa();  // begin()でキャリブレーションされた基準気圧 [hPa]（診断用）
-    float getRoll();        // [deg]
-    float getPitch();       // [deg]
-    float getYaw();         // [deg] 0-360、北=0（BMM350のコンパス方位。TODO: roll/pitchによるチルト補正）
+    float getRoll();        // [deg] ジャイロ積分+加速度の相補フィルタによる重力ベクトルから算出
+    float getPitch();       // [deg] 同上
+    float getYaw();         // [deg] -180〜180、北=0（roll/pitchでチルト補正した地磁気から算出）
     float getAccelMag();    // 合成加速度 [m/s^2]（衝撃検知用）
 
     bool isBmp280Ready();

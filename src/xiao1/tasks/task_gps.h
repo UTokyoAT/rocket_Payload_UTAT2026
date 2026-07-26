@@ -14,12 +14,14 @@ void taskGPS(void* arg) {
     for (;;) {
         gps.update();
 
-        if (gps.isValid()) {
-            if (xSemaphoreTake(s->mutex, pdMS_TO_TICKS(5))) {
+        bool valid = gps.isValid();
+        if (xSemaphoreTake(s->mutex, pdMS_TO_TICKS(5))) {
+            s->latest.gpsValid = valid;
+            if (valid) {
                 s->latest.lat = gps.getLat();
                 s->latest.lon = gps.getLon();
-                xSemaphoreGive(s->mutex);
             }
+            xSemaphoreGive(s->mutex);
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));

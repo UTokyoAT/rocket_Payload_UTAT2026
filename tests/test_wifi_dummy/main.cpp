@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <Radio.h>
-#include "shared.h"
+#include "spi_protocol.h"
 
 // ダミーデータを /data で20Hz公開するテスト（PULL方式、PC側がGETしにくる）
 // PlatformIO で env:test-wifi を選択して書き込む
@@ -11,7 +11,7 @@ static Radio radio;
 // 姿勢：ゆるやかに揺れる
 // GPS ：定点から小さく円を描く
 // state：10秒ごとに自動遷移
-// motorOutputLeft/Right：地上局から /motor で受信した左右手動制御コマンドをそのまま折り返す
+// pid_output：地上局から /motor で受信した左手動制御コマンドをそのまま折り返す
 //              （GUIのスライダーを動かすとテレメトリに反映される様子を確認できる）
 
 void setup() {
@@ -24,24 +24,22 @@ void setup() {
 void loop() {
     const float t = millis() / 1000.0f;
 
-    SensorData d;
+    SpiFrameToXiao2 d{};
     d.timestamp_ms = millis();
     d.alt   = 50.0f + 45.0f * sinf(t * 0.4f);          // 5〜95m
     d.roll  = 25.0f * sinf(t * 1.1f);
     d.pitch = 12.0f * cosf(t * 0.9f);
     d.yaw   = fmodf(t * 36.0f, 360.0f);                 // 10秒で一周
-    d.lat   = 35.681236 + 0.0002 * sinf(t * 0.2f);
-    d.lon   = 139.767125 + 0.0002 * cosf(t * 0.2f);
-    d.motorOutputLeft  = radio.getMotorCommandLeft();
-    d.motorOutputRight = radio.getMotorCommandRight();
+    d.lat   = 35.681236f + 0.0002f * sinf(t * 0.2f);
+    d.lon   = 139.767125f + 0.0002f * cosf(t * 0.2f);
+    d.pid_output      = static_cast<float>(radio.getMotorCommandLeft());
+    d.destination_yaw = fmodf(t * 10.0f, 360.0f) - 180.0f;
 
     // 10秒ごとに次のステートへ自動遷移（ループ）
     const int stateCount = 6;
-    MissionState state = static_cast<MissionState>(
-        (static_cast<int>(t) / 10) % stateCount
-    );
+    d.mission_state = static_cast<uint8_t>((static_cast<int>(t) / 10) % stateCount);
 
-    radio.setData(d, state);
+    radio.setData(d);
     radio.poll();
 
     delay(50);  // 20Hz

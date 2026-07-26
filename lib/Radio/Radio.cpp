@@ -46,29 +46,10 @@ void Radio::begin(const char* ssid, const char* password) {
     _server.begin();
 }
 
-void Radio::setData(const SensorData& d, MissionState state) {
-    size_t off = 0;
-    auto put = [&](const void* src, size_t n) {
-        memcpy(_frame + off, src, n);
-        off += n;
-    };
-
-    put(&d.timestamp_ms, sizeof(d.timestamp_ms));
-    put(&d.alt,          sizeof(d.alt));
-    put(&d.roll,         sizeof(d.roll));
-    put(&d.pitch,        sizeof(d.pitch));
-    put(&d.yaw,           sizeof(d.yaw));
-
-    float lat = static_cast<float>(d.lat);
-    float lon = static_cast<float>(d.lon);
-    put(&lat, sizeof(lat));
-    put(&lon, sizeof(lon));
-
-    uint8_t stateByte = static_cast<uint8_t>(state);
-    put(&stateByte, sizeof(stateByte));
-
-    put(&d.motorOutputLeft,  sizeof(d.motorOutputLeft));
-    put(&d.motorOutputRight, sizeof(d.motorOutputRight));
+void Radio::setData(const SpiFrameToXiao2& frame) {
+    // SpiFrameToXiao2はpacked・パディング無しでワイヤーフレームと同一レイアウトなので
+    // フィールドごとの詰め替えは不要
+    memcpy(_frame, &frame, sizeof(frame));
 }
 
 int16_t Radio::getMotorCommandLeft() {
@@ -79,6 +60,10 @@ int16_t Radio::getMotorCommandLeft() {
 int16_t Radio::getMotorCommandRight() {
     if (millis() - _motorCommandAt > MOTOR_COMMAND_TIMEOUT_MS) return 0;
     return _motorCommandRight;
+}
+
+bool Radio::hasRecentMotorCommand() {
+    return (millis() - _motorCommandAt) <= MOTOR_COMMAND_TIMEOUT_MS;
 }
 
 void Radio::poll() { _server.handleClient(); }

@@ -14,8 +14,8 @@ WiFi SoftAP                        1. CanSat-AP に接続
   IP:   192.168.4.1
 
 GET /       ──── HTML ──────────► 2. ブラウザで 192.168.4.1 を開く
-GET /data   ──── 33byte frame ──► 3. ダッシュボードが150ms間隔でポーリング表示
-GET /data   ──── 33byte frame ──► 4. receiver.py が100〜150ms間隔でポーリングし CSV に保存
+GET /data   ──── 37byte frame ──► 3. ダッシュボードが150ms間隔でポーリング表示
+GET /data   ──── 37byte frame ──► 4. receiver.py が100〜150ms間隔でポーリングし CSV に保存
 GET /motor?left=N&right=M ◄── ok ─ 5. receiver.py の左右手動制御スライダーが250ms間隔で送信
 ```
 
@@ -32,7 +32,7 @@ GET /motor?left=N&right=M ◄── ok ─ 5. receiver.py の左右手動制御�
 - ミッションステート
 - 高度・姿勢（Roll / Pitch / Yaw）
 - GPS座標
-- 左右モーター出力
+- 誘導PID出力・目的地方位
 - 高度の時系列グラフ（直近300点）
 
 ページは`/data`を150ms間隔でGETポーリングしており、取得に失敗すると状態表示が「● unreachable」になる（自動的にポーリングを継続し、次に成功すれば「● reachable」に戻る）。目的地までの距離・方位・地図表示・モーター手動制御はブラウザ版では提供していない（Pythonレシーバー側のみ）。
@@ -58,7 +58,7 @@ python receiver.py
 
 - Tkinterウィンドウが開き、以下をリアルタイム表示する：
   - ミッションステート・高度・姿勢（Roll/Pitch/Yaw）・GPS座標
-  - 左右モーター出力（数値＋バーゲージ、それぞれ-255〜255）
+  - 誘導PID出力（数値＋バーゲージ、-255〜255）・目的地方位（磁北基準）
   - 高度の時系列チャート
   - 現在地・機体の向き（矢印）・移動軌跡・東西南北を表示するマップ（matplotlib）
   - 目的地までの距離・方位（`--dest-lat`/`--dest-lon` 指定時のみ）
@@ -111,8 +111,8 @@ python receiver.py --host 192.168.4.1 --interval-ms 150
 | lat | 緯度 | deg |
 | lon | 経度 | deg |
 | state | ミッションステート名 | - |
-| motor_output_left | 左モーター出力 | -255〜255 |
-| motor_output_right | 右モーター出力 | -255〜255 |
+| pid_output | 誘導PIDの旋回量 | -255〜255 |
+| destination_yaw_deg | 目的地への方位角（機体側計算、磁北基準） | deg |
 | dist_to_dest_m | 目的地までの距離（`--dest-lat`/`--dest-lon`未指定時は空欄） | m |
 | bearing_to_dest_deg | 目的地への方位（同上、未指定時は空欄） | deg |
 
@@ -123,7 +123,7 @@ Polling http://192.168.4.1:80/data every 120ms ...
 Destination: 35.682000, 139.767000
 Logging to logs/log_20260101_120000.csv
 
-[ASCENDING   ] alt= 120.30m  R=  -3.1°  P=   1.8°  Y= 275.0°  GPS=35.68124,139.76713  ML=   0 MR=   0  DIST=  102.4m BRG= 34.2°
+[ASCENDING   ] alt= 120.30m  R=  -3.1°  P=   1.8°  Y= 275.0°  GPS=35.68124,139.76713  PID=   0.0  DESTYAW=  34.2°  DIST=  102.4m BRG= 34.2°
 ```
 
 ### 実機なしでの動作確認（モックデバイス）
@@ -138,13 +138,13 @@ python mock_device.py
 python receiver.py --host 127.0.0.1 --port 8000 --dest-lat 35.6820 --dest-lon 139.7670
 ```
 
-`mock_device.py` は正弦波で変化するダミーの33バイトフレームを `http://127.0.0.1:8000/data` に配信し続ける。`GET /motor?left=N&right=M` も受け付け、機体と同じ1秒フェイルセイフ付きで`motor_output_left/right`に折り返すため、GUIの左右スライダーを動かして手動制御パネルの動作を実機なしで確認できる。
+`mock_device.py` は正弦波で変化するダミーの37バイトフレームを `http://127.0.0.1:8000/data` に配信し続ける。`GET /motor?left=N&right=M` も受け付け、機体と同じ1秒フェイルセイフ付きで`pid_output`（left側の値）に折り返すため、GUIの左右スライダーを動かして手動制御パネルの動作を実機なしで確認できる。
 
 ---
 
 ## バイナリフレームフォーマット（参考）
 
-ESP32-S3 が `/data` で配信する33バイトのバイナリフレーム（リトルエンディアン）。`lib/Radio/Radio.h`・`ground/receiver.py`・`lib/Radio/dashboard.h` の3箇所で共有する契約。Python側フォーマット文字列は `"<IffffffBhh"`。
+ESP32-S3（XIAO2）が `/data` で配信する37バイトのバイナリフレーム（リトルエンディアン）。XIAO1がSPIで送った`SpiFrameToXiao2`（`include/spi_protocol.h`）をXIAO2がそのまま中継したもので、`lib/Radio/Radio.h`・`ground/receiver.py`・`lib/Radio/dashboard.h` の3箇所で共有する契約。Python側フォーマット文字列は `"<IffffffBff"`。
 
 | Offset | Size | 型 | フィールド | 備考 |
 |---|---|---|---|---|
@@ -156,8 +156,8 @@ ESP32-S3 が `/data` で配信する33バイトのバイナリフレーム（リ
 | 20 | 4 | float32 | lat | 緯度（機体側でdoubleから縮小） |
 | 24 | 4 | float32 | lon | 経度（機体側でdoubleから縮小） |
 | 28 | 1 | uint8 | mission_state | 下表参照 |
-| 29 | 2 | int16 | motor_output_left | `Actuator::setMotorLeft()`相当値（-255〜255）。地上局の手動制御（`GET /motor`）で受信した値をそのまま反映 |
-| 31 | 2 | int16 | motor_output_right | `Actuator::setMotorRight()`相当値（-255〜255）。同上 |
+| 29 | 4 | float32 | pid_output | 誘導PIDの旋回量（-255〜255）。地上局の手動制御（`GET /motor`）が有効な間はXIAO2がそちらを優先してモータへ反映する |
+| 33 | 4 | float32 | destination_yaw | 目的地への方位角 [deg]（磁北基準、XIAO1が計算） |
 
 `mission_state` の値と対応するステート：
 

@@ -13,28 +13,40 @@ namespace SpiPins {
 }
 
 // XIAO1(マスター) → XIAO2(スレーブ)
-// XIAO1側で計算済みの姿勢・位置と、地上局からのWiFi手動操作コマンドを送る。
-// 誘導（目標方位との誤差計算）・PIDはXIAO2側で行う。
+// XIAO1側で計算済みの姿勢・位置・誘導PID出力を送る（誘導・PIDはXIAO1側で行う）。
+// このバイナリレイアウトはXIAO2がWiFiテレメトリとしてそのまま地上局へ中継する
+// ワイヤーフレームと共通（lib/Radio, ground/receiver.py, lib/Radio/dashboard.hも参照）。
+// packed・パディング無しの37バイト、リトルエンディアン。
+//
+// offset  size  type     field            note
+//   0      4    uint32   timestamp_ms
+//   4      4    float32  alt              [m]
+//   8      4    float32  roll             [deg]
+//  12      4    float32  pitch            [deg]
+//  16      4    float32  yaw              [deg]
+//  20      4    float32  lat              doubleは送らずfloatに縮小
+//  24      4    float32  lon
+//  28      1    uint8    mission_state    MissionStateのenum値
+//  29      4    float32  pid_output       誘導PIDの旋回量。XIAO2側でbase±turnとしてモータに反映
+//  33      4    float32  destination_yaw  目的地への方位角 [deg]（磁北基準、表示用）
 struct __attribute__((packed)) SpiFrameToXiao2 {
     uint32_t timestamp_ms;
     float alt;
     float roll;
     float pitch;
     float yaw;
-    float lat;  // doubleは送らずfloatに縮小（lib/Radioの33バイトフレームと同じ方針）
+    float lat;
     float lon;
-    uint8_t mission_state;      // MissionStateのenum値
-    int16_t manual_motor_left;  // 地上局からの手動操作値（-255〜255、未受信時はRadio側で自動的に0）
-    int16_t manual_motor_right;
-    uint8_t manual_override;    // 1=手動操作を優先、0=XIAO2の自律PIDを優先
-                                 // TODO: 手動/自律の調停ロジックは未実装。現状は常に0を送る
+    uint8_t mission_state;
+    float pid_output;
+    float destination_yaw;
 };
 
 // XIAO2(スレーブ) → XIAO1(マスター)
-// 実際にモータへ出力した値（手動 or PID後の値）。XIAO1がWiFiでテレメトリ配信する。
+// XIAO1はモータ出力を消費しない（WiFiテレメトリはXIAO2側が担当するため）ので現状未使用。
+// SPIは全二重のため転送自体は必要で、ダミーの応答バイトを返す。
 struct __attribute__((packed)) SpiFrameFromXiao2 {
-    int16_t motor_output_left;
-    int16_t motor_output_right;
+    uint8_t unused;
 };
 
 constexpr size_t SPI_FRAME_SIZE =

@@ -21,16 +21,13 @@ struct SensorData {
     double lat  = 0.0;
     double lon  = 0.0;
     uint32_t timestamp_ms = 0;
-    int16_t motorOutputLeft  = 0;  // Actuator::setMotorLeft()相当値（-255〜255）
-    int16_t motorOutputRight = 0;  // Actuator::setMotorRight()相当値（-255〜255）
+    bool gpsValid = false;         // taskGPSが書き込む。fix取得前はtaskNavigationがPID出力を0に固定する
+    float pidOutput      = 0.0f;  // taskNavigationが計算する誘導PIDの旋回量。taskSpiLinkがXIAO2へ転送する
+    float destinationYaw = 0.0f;  // taskNavigationが計算する目的地への方位角 [deg]（磁北基準）
 };
 
 struct Shared {
     SemaphoreHandle_t mutex;
     SensorData latest;
     MissionState state = MissionState::STANDBY;
-
-    // 地上局からのWiFi手動操作コマンド（taskWifiが書き込み、taskSpiLinkがXIAO2へ転送する）
-    int16_t manualMotorLeft  = 0;
-    int16_t manualMotorRight = 0;
 };

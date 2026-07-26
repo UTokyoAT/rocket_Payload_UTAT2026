@@ -20,12 +20,19 @@ static const int GPS_TX_PIN = 43;  // D6
 
 static const int BASE_SPEED = 150;  // 直進基準速度（-255〜255）
 
+// 東京の磁気偏角（西偏、約7.667度）。GPS方位(真北基準)とBMM350のyaw(磁北基準)を
+// 比較する際に補正する。TODO: 実際の打ち上げ場所に合わせて変更する
+static const float MAGNETIC_DECLINATION_DEG = 7.667f;
+
 static Sensor sensor;
 static GPS gps;
 static Actuator actuator;
-static PID headingPid(2.0f, 0.0f, 0.5f, -255.0f, 255.0f);  // TODO: 実機でゲイン調整
+// TODO: 実機でゲイン調整。ループ周期を10Hz->100Hz目安に変更したため、
+// Ki/Kd項の実効的な効きがdtに応じて変わる点に注意して再チューニングすること
+static PID headingPid(2.0f, 0.0f, 0.5f, -255.0f, 255.0f);
 
 static uint32_t _lastUpdateMs = 0;
+static uint32_t _printCounter = 0;
 
 static float normalizeAngle(float deg) {
     while (deg > 180.0f)  deg -= 360.0f;
@@ -62,8 +69,9 @@ void loop() {
     }
 
     float bearing  = gps.bearingTo(GOAL_LAT, GOAL_LON);
-    float heading  = sensor.getYaw();
-    float error    = normalizeAngle(bearing - heading);
+    float heading  = sensor.getYaw();  // -180〜180、磁北基準
+    // GPS方位(真北基準)を磁北基準に補正してからheadingと比較する
+    float error    = normalizeAngle(bearing + MAGNETIC_DECLINATION_DEG - heading);
     float distance = gps.distanceTo(GOAL_LAT, GOAL_LON);
 
     float turn = headingPid.update(error, dt);
@@ -73,8 +81,13 @@ void loop() {
     actuator.setMotorLeft(left);
     actuator.setMotorRight(right);
 
-    Serial.printf("bearing=%.1f heading=%.1f error=%.1f turn=%.1f left=%4d right=%4d dist=%.1fm\n",
-                  bearing, heading, error, turn, left, right, distance);
+    // 115200baudでは1行のprintfだけで数ms消費し100Hzループを圧迫するため、
+    // モータ/PID更新は毎回行いつつSerial出力だけ間引く
+    if (++_printCounter >= 10) {
+        _printCounter = 0;
+        Serial.printf("dt=%.3f bearing=%.1f heading=%.1f error=%.1f turn=%.1f left=%4d right=%4d dist=%.1fm\n",
+                      dt, bearing, heading, error, turn, left, right, distance);
+    }
 
-    delay(100);  // 10Hz、dt=0.1s
+    delay(10);  // 100Hz目安（実測dtでPID計算するので多少ズレても問題ない）
 }
