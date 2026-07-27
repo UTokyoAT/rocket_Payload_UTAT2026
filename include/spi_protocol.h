@@ -4,6 +4,19 @@
 // XIAO1（マスター）⇔ XIAO2（スレーブ）間のSPI通信契約。
 // 変更する場合はSpiLinkMaster/SpiLinkSlave両方への影響を確認すること。
 
+// ミッションのシーケンス状態。XIAO1のtask_mission.hが遷移させ、SpiFrameToXiao2::mission_state
+// としてXIAO2へ送る。XIAO2はNAVIGATE状態のときだけ自律PID出力をモータへ反映する（安全ゲート）ため、
+// shared.h（XIAO1専用）ではなくXIAO1・XIAO2共通のこのヘッダで定義する。
+enum class MissionState : uint8_t {
+    SETTING,   // 起動直後。気圧ベースライン校正・GPS衛星捕捉待ち・目的地（打ち上げ地点）取得
+    LAUNCH,    // 打ち上げ検知待ち（高度8m超を5tick連続検知）
+    DETACH,    // ロケットから分離（ニクロム線）・パラシュート降下中の着地検知待ち
+    UNFOLD,    // パラシュート分離（ニクロム線）・姿勢安定確認
+    NAVIGATE,  // GNSS誘導で打ち上げ地点へ自律走行
+    GOAL,      // 到達（停止）検知。回収支援のLED点滅
+    ABORTED    // いずれかのタイムアウト・異常により中断。モータ停止・LED点滅
+};
+
 // Seeed XIAO ESP32S3のD番号 -> GPIO番号。SCK/MISO/MOSIはXIAO1・XIAO2共通配線（D8/D9/D10）。
 // CSはXIAO1(マスター)側の出力ピンとXIAO2(スレーブ)側の入力ピンが異なるGPIO番号のため分けている。
 namespace SpiPins {

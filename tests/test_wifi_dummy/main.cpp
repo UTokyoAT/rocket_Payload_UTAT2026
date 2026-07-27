@@ -36,7 +36,7 @@ void loop() {
     d.destination_yaw = fmodf(t * 10.0f, 360.0f) - 180.0f;
 
     // 10秒ごとに次のステートへ自動遷移（ループ）
-    const int stateCount = 6;
+    const int stateCount = 7;
     d.mission_state = static_cast<uint8_t>((static_cast<int>(t) / 10) % stateCount);
 
     radio.setData(d);

@@ -4,7 +4,9 @@
 
 テレメトリはPULL方式: 地上PC側（ブラウザ／Pythonスクリプト）が機体の `GET /data` を定期的にポーリングしにいく。機体からPCへ能動的にデータを送りつけることはしない（PC側ファイアウォールに阻まれ信頼できないため）。
 
-モーター手動制御はその逆方向（PC→機体のアウトバウンド `GET /motor?left=N&right=M`）で、こちらは`/data`のPULLと同じくPC側から能動的に接続するので信頼できる。左右独立に指定し、機体側は1秒間コマンドを受信しないと自動的に両方の出力を0にするフェイルセイフを持つ。
+モーター手動制御はその逆方向（PC→機体のアウトバウンド `GET /motor?left=N&right=M`）で、こちらは`/data`のPULLと同じくPC側から能動的に接続するので信頼できる。左右独立に指定し、機体側は1秒間コマンドを受信しないと自動的に両方の出力を0にするフェイルセイフを持つ。ただし自律PID走行はミッションステートが`NAVIGATE`のときしか反映されない（`src/xiao2/main.cpp`参照）ため、手動操作もその他の状態では実質的にモータを直接動かすだけになる。
+
+誘導PIDの目的地座標も同じ方向（`GET /goal?lat=..&lon=..`）で設定できる。モーターコマンドと異なりタイムアウトでは無効化されず、明示的に上書きされるまで保持される。既定ではSETTINGシーケンス完了時に機体が取得したGPS座標（打ち上げ地点）が目的地になるが、`/goal`を送ればいつでも優先的に上書きできる。
 
 ```
 ESP32-S3（CanSat）                  地上PC
@@ -17,6 +19,7 @@ GET /       ──── HTML ──────────► 2. ブラウザ�
 GET /data   ──── 37byte frame ──► 3. ダッシュボードが150ms間隔でポーリング表示
 GET /data   ──── 37byte frame ──► 4. receiver.py が100〜150ms間隔でポーリングし CSV に保存
 GET /motor?left=N&right=M ◄── ok ─ 5. receiver.py の左右手動制御スライダーが250ms間隔で送信
+GET /goal?lat=..&lon=..   ◄── ok ─ 6. receiver.py が --dest-lat/--dest-lon 指定時に起動時1回送信
 ```
 
 ---
@@ -137,7 +140,7 @@ Polling http://192.168.4.1:80/data every 120ms ...
 Destination: 35.682000, 139.767000
 Logging to logs/log_20260101_120000.csv
 
-[ASCENDING   ] alt= 120.30m  R=  -3.1°  P=   1.8°  Y= 275.0°  GPS=35.68124,139.76713  PID=   0.0  DESTYAW=  34.2°  DIST=  102.4m BRG= 34.2°
+[NAVIGATE    ] alt= 120.30m  R=  -3.1°  P=   1.8°  Y= 275.0°  GPS=35.68124,139.76713  PID=   0.0  DESTYAW=  34.2°  DIST=  102.4m BRG= 34.2°
 ```
 
 ### 実機なしでの動作確認（モックデバイス）
@@ -152,7 +155,7 @@ python mock_device.py
 python receiver.py --host 127.0.0.1 --port 8000 --dest-lat 35.6820 --dest-lon 139.7670
 ```
 
-`mock_device.py` は正弦波で変化するダミーの37バイトフレームを `http://127.0.0.1:8000/data` に配信し続ける。`GET /motor?left=N&right=M` も受け付け、機体と同じ1秒フェイルセイフ付きで`pid_output`（left側の値）に折り返すため、GUIの左右スライダーを動かして手動制御パネルの動作を実機なしで確認できる。
+`mock_device.py` は正弦波で変化するダミーの37バイトフレームを `http://127.0.0.1:8000/data` に配信し続ける。`GET /motor?left=N&right=M` も受け付け、機体と同じ1秒フェイルセイフ付きで`pid_output`（left側の値）に折り返すため、GUIの左右スライダーを動かして手動制御パネルの動作を実機なしで確認できる。`GET /goal?lat=..&lon=..` も200 okを返すだけの受け口として用意してあり、`--dest-lat`/`--dest-lon`指定時に`receiver.py`が自動送信する`GoalSender`が無限リトライし続けないようにしている。
 
 ---
 
@@ -173,13 +176,14 @@ ESP32-S3（XIAO2）が `/data` で配信する37バイトのバイナリフレ�
 | 29 | 4 | float32 | pid_output | 誘導PIDの旋回量（-255〜255）。地上局の手動制御（`GET /motor`）が有効な間はXIAO2がそちらを優先してモータへ反映する |
 | 33 | 4 | float32 | destination_yaw | 目的地への方位角 [deg]（磁北基準、XIAO1が計算） |
 
-`mission_state` の値と対応するステート：
+`mission_state` の値と対応するステート（詳細は `docs/architecture.md` の「ミッションステート遷移」参照）：
 
 | 値 | ステート |
 |---|---|
-| 0 | STANDBY |
-| 1 | ASCENDING |
-| 2 | DESCENDING |
-| 3 | SEPARATING |
-| 4 | RUNNING |
+| 0 | SETTING |
+| 1 | LAUNCH |
+| 2 | DETACH |
+| 3 | UNFOLD |
+| 4 | NAVIGATE |
 | 5 | GOAL |
+| 6 | ABORTED |

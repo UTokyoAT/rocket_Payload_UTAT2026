@@ -49,6 +49,11 @@ void loop() {
         lastSpiFrameMs = millis();
     }
 
+    // 自律PID走行はNAVIGATE状態のときだけ有効にする（発射・分離・展開の最中に
+    // pid_outputの値でモータが勝手に動き出さないようにする安全ゲート）。
+    // 地上局からの手動操作コマンドはミッションステートに関わらず常に優先する。
+    MissionState missionState = static_cast<MissionState>(lastFrame.mission_state);
+
     int16_t left, right;
     if (millis() - lastSpiFrameMs > SPI_LINK_TIMEOUT_MS) {
         left  = 0;
@@ -56,8 +61,11 @@ void loop() {
     } else if (radio.hasRecentMotorCommand()) {
         left  = radio.getMotorCommandLeft();
         right = radio.getMotorCommandRight();
-    } else {
+    } else if (missionState == MissionState::NAVIGATE) {
         computeAutonomousMotor(lastFrame.pid_output, left, right);
+    } else {
+        left  = 0;
+        right = 0;
     }
 
     actuator.setMotorLeft(left);

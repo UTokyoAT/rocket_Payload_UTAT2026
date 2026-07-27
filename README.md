@@ -34,6 +34,7 @@ rocket_Payload_UTAT2026/
 │   │       ├── task_sensor.h        # IMU・気圧・地磁気読み取り＋姿勢フィルタ（100Hz, Core1）
 │   │       ├── task_gps.h           # GPS受信・パース（Core0）
 │   │       ├── task_navigation.h    # 誘導PID計算（100Hz, Core1）
+│   │       ├── task_mission.h       # ミッションステート遷移（20Hz, Core1）
 │   │       └── task_spi_link.h      # XIAO2への送信（100Hz, Core1）
 │   └── xiao2/                       # モータ駆動・WiFiテレメトリ中継（SPIスレーブ）
 │       └── main.cpp
@@ -46,8 +47,7 @@ rocket_Payload_UTAT2026/
 │   ├── SpiLinkSlave/        # XIAO1からのSPI受信（スレーブ側）              ─ XIAO2
 │   ├── Radio/               # WiFi SoftAP・HTTP GETでバイナリフレーム配信（PULL方式） ─ XIAO2
 │   ├── Actuator/            # モーター制御（TB6612FNG）                     ─ XIAO2
-│   ├── Deployer/            # ロケット分離・パラシュート分離（ニクロム線）・LED ─ XIAO1
-│   └── StateMachine/        # ミッションステート遷移ロジック（未統合）
+│   └── Deployer/            # ロケット分離・パラシュート分離（ニクロム線）・LED ─ XIAO1
 │
 ├── ground/
 │   ├── receiver.py          # HTTP GETポーリング受信＋CSVロギング＋Tkinter GUI

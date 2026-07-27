@@ -12,9 +12,9 @@ XIAO1 ────────────────────────�
 
 | | XIAO1（マスター） | XIAO2（スレーブ） |
 |---|---|---|
-| 役割 | センサー読み取り・GPS・誘導フュージョン・PID計算 | モーター駆動・WiFi通信（テレメトリ配信・手動操作受信） |
+| 役割 | センサー読み取り・GPS・誘導フュージョン・PID計算・ミッションステート管理・ニクロム線分離機構 | モーター駆動・WiFi通信（テレメトリ配信・手動操作受信） |
 | 実装方式 | デュアルコア＋FreeRTOSタスク（`loop()`は使わない） | シンプルな`setup()`/`loop()` |
-| 主なlib | Sensor, GPS, PID, SpiLinkMaster | Radio, Actuator, SpiLinkSlave |
+| 主なlib | Sensor, GPS, PID, Deployer, SpiLinkMaster | Radio, Actuator, SpiLinkSlave |
 | PlatformIO env | `xiao1` | `xiao2` |
 
 XIAO1が姿勢・GPS・誘導PID出力までSPIで計算しきってXIAO2へ送り、XIAO2はそれをそのままモータへ反映しつつ、同じフレームをWiFiで地上局へ中継する（地上局からの手動操作コマンドもXIAO2が直接WiFiで受信し、SPI経由の中継はしない）。
@@ -30,19 +30,19 @@ Core 0                            Core 1（リアルタイム系）
 ────────                          ──────────────────────────────────
 taskGPS  priority 3               taskSensor      priority 5  ← 100Hz 最優先
                                    taskNavigation  priority 4  ← 誘導PID計算
+                                   taskMission     priority 4  ← ミッションステート遷移
                                    taskSpiLink     priority 3  ← XIAO2への送信
 ```
 
-Core 1の3タスクはセンサー→誘導PID→SPI送信の依存順に優先度を割り当てている。
+Core 1の4タスクはセンサー→誘導PID・ミッション判定→SPI送信の依存順に優先度を割り当てている。
 
 | タスク | 周期 | 役割 |
 |---|---|---|
 | taskSensor | 100Hz | IMU・気圧・地磁気を読み、姿勢フィルタ（重力ベクトルの相補フィルタ＋地磁気チルト補正）を回す。BMM350のODRも100Hzに設定（`lib/Sensor`） |
 | taskNavigation | 100Hz | GPS方位とyawの誤差（磁気偏角補正込み）をPIDで補正し、旋回量(`pidOutput`)と目的地方位(`destinationYaw`)をSharedへ書き込む。GPS fix未取得中は出力0固定 |
-| taskSpiLink | 100Hz | センサー値・誘導PID出力をXIAO2へ送信する（応答フレームは未使用） |
-| taskGPS | イベント駆動 | NMEAをバイト単位でパース。fix有無を`gpsValid`としてSharedへ書き込む |
-
-TODO: `taskStateMachine`（ミッションステート遷移）は未実装。現状`Shared.state`は`STANDBY`のまま固定される。
+| taskMission | 20Hz（50ms） | SETTING〜GOAL/ABORTEDのシーケンスを進行させ`Shared.state`を更新し、`lib/Deployer`（ニクロム線・LED）を制御する。詳細は「[ミッションステート遷移](#ミッションステート遷移)」参照 |
+| taskSpiLink | 100Hz | センサー値・誘導PID出力・ミッションステートをXIAO2へ送信し、応答フレーム（地上局が設定した目的地）を受け取る |
+| taskGPS | イベント駆動 | NMEAをバイト単位でパース。fix有無・衛星数・新規fix到着を`gpsValid`/`gpsSatellites`/`gpsFixSeq`としてSharedへ書き込む |
 
 ---
 
@@ -58,19 +58,22 @@ include/shared.h
 │   double lat, lon;                                 │
 │   uint32_t timestamp_ms;                           │
 │   bool gpsValid;                                   │
-│   float pidOutput;       ← taskNavigationが計算    │
-│   float destinationYaw;  ← taskNavigationが計算    │
+│   int gpsSatellites;      ← taskGPSが計算          │
+│   uint32_t gpsFixSeq;     ← taskGPSが計算          │
+│   float pidOutput;        ← taskNavigationが計算   │
+│   float destinationYaw;   ← taskNavigationが計算   │
 │ };                                                  │
 │ struct Shared {                                    │
 │   SemaphoreHandle_t mutex;                         │
 │   SensorData latest;                               │
-│   MissionState state;                              │
+│   MissionState state;    ← taskMissionが更新       │
+│   double goalLat, goalLon; ← taskMission/taskSpiLinkが更新 │
 │ };                                                  │
 └────────────────────────────────────────────────────┘
 ```
 
-- **書き込み**: taskSensor（alt/roll/pitch/yaw/timestamp_ms）、taskGPS（lat/lon/gpsValid）、taskNavigation（pidOutput/destinationYaw）
-- **読み取り**: taskNavigation（yaw/lat/lon/gpsValid）、taskSpiLink（XIAO2への送信用）
+- **書き込み**: taskSensor（alt/roll/pitch/yaw/timestamp_ms）、taskGPS（lat/lon/gpsValid/gpsSatellites/gpsFixSeq）、taskNavigation（pidOutput/destinationYaw）、taskMission（state/goalLat/goalLon）、taskSpiLink（goalLat/goalLon、地上局が`GET /goal`を送った場合のみ）
+- **読み取り**: taskNavigation（yaw/lat/lon/gpsValid/goalLat/goalLon）、taskMission（alt/roll/pitch/gpsValid/gpsSatellites/lat/lon/gpsFixSeq）、taskSpiLink（XIAO2への送信用）
 
 ---
 
@@ -90,46 +93,52 @@ lib/SpiLinkSlave/    XIAO1からのトランザクション受信（hideakitai/E
 lib/Radio/           WiFi SoftAP 立ち上げ・HTTP GET でバイナリフレーム配信（PULL方式）        ─ XIAO2
 lib/Actuator/        モーター（TB6612FNG、3ピン/モーター＋共有STBY方式で左右独立駆動）         ─ XIAO2
 lib/Deployer/        ロケット分離・パラシュート分離（いずれもニクロム線でテグス溶断）・LED     ─ XIAO1
-lib/StateMachine/    ミッションステート遷移ロジック（未統合。TODO参照）
 lib/DebugLog/        WiFi SoftAP + HTTPでテキストログ配信（tests/配下の単体動作確認専用。本番では未使用）
 ```
+
+ミッションステート遷移ロジック自体は`lib/`ではなく`src/xiao1/tasks/task_mission.h`に置いている（Sensor/GPS/Deployerなど複数libを横断的に読み書きする調停役のため、他タスクと同じく「libを呼ぶだけの薄いラッパー」ではなく、libをまたぐ状態管理そのものがこのタスクの本体になる）。
 
 ---
 
 ## ミッションステート遷移
 
+`src/xiao1/tasks/task_mission.h`（`taskMission`、50ms周期）が実装する。実際の運用フローチャートに基づく7状態。「tick」はtaskMission自身の50ms周期を指す（NAVIGATEの停止判定のみ、GPSの実際の更新間隔に合わせて「新規fixの到着回数」で数える。理由は後述）。
+
 ```
-              高度上昇検知
-  STANDBY ─────────────────► ASCENDING
-                                  │
-                         高度減少 or 衝撃検知
-                                  │
-                                  ▼
-                             DESCENDING
-                                  │
-                           着地高度到達
-                                  │
-                                  ▼
-                            SEPARATING  ── パラシュート展開・分離
-                                  │
-                                  ▼
-                              RUNNING   ── 地上走行・ミッション
-                                  │
-                            タイムアウト or ゴール到達
-                                  │
-                                  ▼
-                             GOAL/MISSING ── LED点滅（回収支援）
+SETTING ──衛星10個以上を捕捉──► LAUNCH ──高度8m超を5tick連続検知──► DETACH
+   │ 10分タイムアウト                                                  │ deployRocket()
+   ▼                                                                    │ 高度変化1m未満を5tick連続検知
+ABORTED ◄───────────────────────────────────────────────────────────────┤
+   ▲                                                                    ▼
+   │ 5分タイムアウト                                                 UNFOLD
+   │（安定したが20度以内に収まらない）                                  │ deployParachute()
+   └──────────────────────────────────────────────────────────────────┤ 変化幅10度以下(直近10tick)
+                                                                        │ かつ絶対値20度以下を5tick連続検知
+                                                                        ▼
+   ABORTED ◄── 10分タイムアウト（停止を検知できず） ──────────── NAVIGATE
+      │                                                                 │ 緯度or経度の変化が
+      │                                                                 │ 0.00001度以下を新規fix5回連続検知
+      ▼                                                                 ▼
+  LED点滅で異常を通知し続ける                                          GOAL ── LED点滅（回収支援）
+  （モータはNAVIGATE以外では動かないため自然に停止する）
 ```
 
-各遷移のトリガー：
+各遷移のトリガーとしきい値（すべて`task_mission.h`冒頭の定数）：
 
 | 遷移 | トリガー |
 |---|---|
-| STANDBY → ASCENDING | 気圧高度が閾値を超える |
-| ASCENDING → DESCENDING | 高度減少 |
-| DESCENDING → SEPARATING | 低高度到達 |
-| SEPARATING → RUNNING | 分離処理完了後即時 |
-| RUNNING → GOAL | タイムアウト |
+| SETTING → LAUNCH | GPS衛星捕捉数が`SETTING_MIN_SATELLITES`（10個）以上、かつfix取得済み。このとき現在のGPS座標を`Shared::goalLat/goalLon`（＝打ち上げ地点）として記録する |
+| SETTING → ABORTED | `SETTING_TIMEOUT_MS`（10分）経過しても衛星10個に届かない |
+| LAUNCH → DETACH | 高度が`LAUNCH_ALT_THRESHOLD_M`（8m）を`LAUNCH_CONFIRM_TICKS`（5tick=0.25秒）連続で超える。タイムアウトなし（発射操作を待ち続ける） |
+| DETACH → UNFOLD | 遷移時に`Deployer::deployRocket()`（ロケットから分離）。以後、1tickごとの高度変化が`DETACH_ALT_DELTA_THRESHOLD_M`（1m）未満を`DETACH_CONFIRM_TICKS`（5tick）連続で検知＝着地。タイムアウトなし |
+| UNFOLD → NAVIGATE | 遷移時に`Deployer::deployParachute()`（パラシュート分離）。直近`UNFOLD_STABLE_WINDOW_TICKS`（10tick）のroll/pitch変化幅がともに`UNFOLD_STABLE_RANGE_DEG`（10度）以下、かつ`abs(roll)`/`abs(pitch)`がともに`UNFOLD_UPRIGHT_ABS_DEG`（20度）以下を`UNFOLD_UPRIGHT_CONFIRM_TICKS`（5tick）連続で検知 |
+| UNFOLD → ABORTED | `UNFOLD_TIMEOUT_MS`（5分）経過しても上記条件を満たさない（変化は収まった＝安定したが20度以内に収まらない＝回収不能と判断） |
+| NAVIGATE → GOAL | `Shared::goalLat/goalLon`へ向けた自律走行中、緯度・経度いずれかの変化が新規GPS fixで`NAVIGATE_STOP_DELTA_DEG`（0.00001度）以下を`NAVIGATE_STOP_CONFIRM_FIXES`（5回）連続で検知＝停止（到達） |
+| NAVIGATE → ABORTED | `NAVIGATE_TIMEOUT_MS`（10分）経過しても停止を検知できない |
+
+**NAVIGATEの停止判定だけ「tick」ではなく「GPS fix到着回数」で数える理由**：GPSは実際には1Hz程度でしか更新されないため、taskMissionの50ms周期でそのまま緯度経度をサンプリングすると、同じ古い値を何度も連続で読んでしまい「移動していない」と誤判定しかねない。そのため`taskGPS`が新規fix受信のたびインクリメントする`SensorData::gpsFixSeq`の変化を検知したときだけ判定する。
+
+**ABORTED/GOALの共通挙動**：`Deployer::beepPattern()`を呼び続けてLEDを点滅させ、回収支援の位置知らせを継続する。区別はテレメトリの`mission_state`の値で行う。モータはXIAO2側で`MissionState::NAVIGATE`のときしか自律走行しないため（後述）、ABORTED/GOALでは特別な停止処理をせずとも自然にモータが止まる。
 
 ---
 
@@ -152,9 +161,9 @@ WiFi/HTTPは**XIAO2**が担当する（XIAO1はSPI送信のみでWiFiを持た�
 
 地上局からのモーター手動制御は `GET /motor?left=-255〜255&right=-255〜255` で受け付ける（PCから機体へのアウトバウンド方向なので、`/data`のPULLと同じく信頼できる方向）。`Radio::getMotorCommandLeft()`/`getMotorCommandRight()` は、`MOTOR_COMMAND_TIMEOUT_MS`（1000ms）以上新しいコマンドが来ていなければ自動的に0を返すフェイルセイフを持つ。地上局側（`ground/receiver.py`）は手動制御が有効な間、250ms間隔でコマンドを送り続けることでこのタイムアウトより十分短い周期を維持する。
 
-このコマンドはXIAO2が直接WiFiで受信し、SPI経由の中継はしない（XIAO1はWiFiを持たないため関与しない）。手動操作と自律PID（XIAO1側で計算した`pid_output`）のどちらを優先するかは、`Radio::hasRecentMotorCommand()`（タイムアウト以内に手動コマンドを受信しているか）で`src/xiao2/main.cpp`の`loop()`が判定する。フラグではなく「直近に手動コマンドが来ているか」で判定するため、`SpiFrameToXiao2`側に調停フラグは持たない。
+このコマンドはXIAO2が直接WiFiで受信し、SPI経由の中継はしない（XIAO1はWiFiを持たないため関与しない）。手動操作と自律PID（XIAO1側で計算した`pid_output`）のどちらを優先するかは、`Radio::hasRecentMotorCommand()`（タイムアウト以内に手動コマンドを受信しているか）で`src/xiao2/main.cpp`の`loop()`が判定する。フラグではなく「直近に手動コマンドが来ているか」で判定するため、`SpiFrameToXiao2`側に調停フラグは持たない。ただし自律PID出力（`else if`側）は`mission_state`が`NAVIGATE`のときしか反映されない（手動操作はステートに関わらず常に優先）。詳細は「[ミッションステート遷移](#ミッションステート遷移)」参照。
 
-誘導PIDの目的地座標は `GET /goal?lat=..&lon=..` で設定する。モーターコマンドと異なりタイムアウトで無効化されない（通信が途切れたからといって目的地を失わせるのは危険なため、明示的に上書きされるまで保持する）。この座標はXIAO1側の誘導計算（`task_navigation.h`）で使うため、XIAO2が受信した値をSPIの応答フレーム（`SpiFrameFromXiao2`、XIAO2→XIAO1方向）に載せてXIAO1へ送り返す。未設定の間は`Shared::goalLat/goalLon`（`include/shared.h`）の既定値を使う。`ground/receiver.py`は`--dest-lat`/`--dest-lon`起動引数を指定すると、地図表示用の目的地としてだけでなくこの`/goal`エンドポイントにも同じ座標を送るため、地上局の表示上の目的地と機体が実際に向かう先が食い違わない。
+誘導PIDの目的地座標の既定値は、SETTINGシーケンス完了時に`taskMission`が取得したGPS座標（＝打ち上げ地点）で、以後NAVIGATEはこの地点へ戻る形（return-to-launch）で走行する。地上局はこれを`GET /goal?lat=..&lon=..`でいつでも上書きできる。モーターコマンドと異なりタイムアウトで無効化されない（通信が途切れたからといって目的地を失わせるのは危険なため、明示的に上書きされるまで保持する）。この座標はXIAO1側の誘導計算（`task_navigation.h`）で使うため、XIAO2が受信した値をSPIの応答フレーム（`SpiFrameFromXiao2`、XIAO2→XIAO1方向）に載せてXIAO1へ送り返す。`ground/receiver.py`は`--dest-lat`/`--dest-lon`起動引数を指定すると、地図表示用の目的地としてだけでなくこの`/goal`エンドポイントにも同じ座標を送るため、地上局の表示上の目的地と機体が実際に向かう先が食い違わない。
 
 なお `tests/test_navigation` はGPS方位とBMM350ヘディングの誤差をPIDで補正し左右モーターへ反映する自律航行の統合確認だが、これはSPIを経由しない（Actuatorを直接駆動するスタンドアロンテスト）。`src/xiao1/tasks/task_navigation.h` の誘導PIDロジックと同じ考え方の参考実装として位置づける。
 
@@ -216,7 +225,7 @@ XIAO2はこのフレームをそのままWiFiテレメトリとしても中継�
 
 ### XIAO2側の処理（モータ駆動・WiFi中継）
 
-`src/xiao2/main.cpp` の `loop()` が、受信した`pid_output`を`BASE_SPEED ± pid_output`の左右差動出力に変換する（誘導・PID自体はXIAO1側の`task_navigation.h`で計算済み）。`Radio::hasRecentMotorCommand()`が真なら地上局からの手動コマンドを優先する。ただしXIAO1からのSPIフレームが`SPI_LINK_TIMEOUT_MS`（5秒）以上途絶えた場合は、XIAO1側の異常とみなし手動コマンドより優先してモータを強制停止する（`lastSpiFrameMs`で最終受信時刻を追跡）。現状のTODO：
+`src/xiao2/main.cpp` の `loop()` が、受信した`pid_output`を`BASE_SPEED ± pid_output`の左右差動出力に変換する（誘導・PID自体はXIAO1側の`task_navigation.h`で計算済み）。ただしこの自律PID出力は`mission_state`が`MissionState::NAVIGATE`のときしか反映しない（発射・分離・パラシュート展開の最中にモータが勝手に動き出さないための安全ゲート）。`Radio::hasRecentMotorCommand()`が真なら、ミッションステートに関わらず地上局からの手動コマンドを優先する。さらにXIAO1からのSPIフレームが`SPI_LINK_TIMEOUT_MS`（5秒）以上途絶えた場合は、XIAO1側の異常とみなし手動コマンドより優先してモータを強制停止する（`lastSpiFrameMs`で最終受信時刻を追跡）。優先順位は「SPI断 > 手動コマンド > NAVIGATE時の自律PID > それ以外は停止」。現状のTODO：
 
 - `BASE_SPEED`のミッションステート依存化（現状は固定値150）
 

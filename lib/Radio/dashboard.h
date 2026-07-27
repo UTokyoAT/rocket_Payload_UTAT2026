@@ -70,7 +70,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
   </div>
 
   <script>
-    const STATE_NAMES = ["STANDBY","ASCENDING","DESCENDING","SEPARATING","RUNNING","GOAL"];
+    const STATE_NAMES = ["SETTING","LAUNCH","DETACH","UNFOLD","NAVIGATE","GOAL","ABORTED"];
     const MAX_PTS = 300;
     const altBuf = [];
     const canvas = document.getElementById('chart');

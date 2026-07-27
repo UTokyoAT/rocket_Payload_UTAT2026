@@ -15,11 +15,16 @@ void taskGPS(void* arg) {
         gps.update();
 
         bool valid = gps.isValid();
+        // getLat()/getLon()より先に読むこと（呼ぶと内部の更新フラグが消費されるため）
+        bool freshFix = gps.locationUpdated();
+        int  satellites = gps.satellites();
         if (xSemaphoreTake(s->mutex, pdMS_TO_TICKS(5))) {
             s->latest.gpsValid = valid;
+            s->latest.gpsSatellites = satellites;
             if (valid) {
                 s->latest.lat = gps.getLat();
                 s->latest.lon = gps.getLon();
+                if (freshFix) s->latest.gpsFixSeq++;
             }
             xSemaphoreGive(s->mutex);
         }

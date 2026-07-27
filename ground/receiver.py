@@ -61,12 +61,13 @@ Frame = namedtuple("Frame", ["t", "alt", "roll", "pitch", "yaw", "lat", "lon", "
                               "pid_output", "destination_yaw"])
 
 STATE_NAMES = {
-    0: "STANDBY",
-    1: "ASCENDING",
-    2: "DESCENDING",
-    3: "SEPARATING",
-    4: "RUNNING",
+    0: "SETTING",
+    1: "LAUNCH",
+    2: "DETACH",
+    3: "UNFOLD",
+    4: "NAVIGATE",
     5: "GOAL",
+    6: "ABORTED",
 }
 
 CSV_HEADER = ["timestamp_ms", "alt_m", "roll_deg", "pitch_deg", "yaw_deg",
