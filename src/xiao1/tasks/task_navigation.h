@@ -3,9 +3,8 @@
 #include <PID.h>
 #include <TinyGPSPlus.h>
 
-// TODO: 実際のゴール座標に置き換える（tests/test_navigationと同じ仮値）
-static const double NAV_GOAL_LAT = 35.681236;
-static const double NAV_GOAL_LON = 139.767125;
+// 目的地座標はShared::goalLat/goalLonを参照する（既定値はshared.hを参照。
+// 地上局がXIAO2へGET /goal?lat=..&lon=..を送るとtaskSpiLink経由で上書きされる）。
 
 // 東京の磁気偏角（西偏、約7.667度）。GPS方位(真北基準)とBMM350のyaw(磁北基準)を
 // 比較する際に補正する。TODO: 実際の打ち上げ場所に合わせて変更する
@@ -33,12 +32,15 @@ void taskNavigation(void* arg) {
         float yaw;
         double lat, lon;
         bool gpsValid;
+        double goalLat, goalLon;
 
         if (xSemaphoreTake(s->mutex, pdMS_TO_TICKS(5))) {
             yaw      = s->latest.yaw;
             lat      = s->latest.lat;
             lon      = s->latest.lon;
             gpsValid = s->latest.gpsValid;
+            goalLat  = s->goalLat;
+            goalLon  = s->goalLon;
             xSemaphoreGive(s->mutex);
         }
 
@@ -50,7 +52,7 @@ void taskNavigation(void* arg) {
         float destinationYaw = 0.0f;
 
         if (gpsValid) {
-            destinationYaw = static_cast<float>(TinyGPSPlus::courseTo(lat, lon, NAV_GOAL_LAT, NAV_GOAL_LON));
+            destinationYaw = static_cast<float>(TinyGPSPlus::courseTo(lat, lon, goalLat, goalLon));
             float error = navNormalizeAngle(destinationYaw + NAV_MAGNETIC_DECLINATION_DEG - yaw);
             pidOutput = headingPid.update(error, dt);
         } else {

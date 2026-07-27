@@ -30,4 +30,10 @@ struct Shared {
     SemaphoreHandle_t mutex;
     SensorData latest;
     MissionState state = MissionState::STANDBY;
+
+    // 誘導PIDの目的地。起動時はここの既定値を使い、地上局がXIAO2へGET /goal?lat=..&lon=..を
+    // 送るとtaskSpiLinkがSPI応答経由で受け取ってここを上書きする（taskNavigation.h参照）。
+    // TODO: 打ち上げ場所に合わせて既定値を変更するか、毎回GET /goalで明示的に設定する運用にする
+    double goalLat = 35.681236;
+    double goalLon = 139.767125;
 };

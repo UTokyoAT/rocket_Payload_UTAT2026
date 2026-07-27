@@ -45,7 +45,8 @@ rocket_Payload_UTAT2026/
 │   ├── SpiLinkMaster/       # XIAO2へのSPI送信（マスター側）                ─ XIAO1
 │   ├── SpiLinkSlave/        # XIAO1からのSPI受信（スレーブ側）              ─ XIAO2
 │   ├── Radio/               # WiFi SoftAP・HTTP GETでバイナリフレーム配信（PULL方式） ─ XIAO2
-│   ├── Actuator/            # モーター・パラシュート・ブザー・LED制御       ─ XIAO2
+│   ├── Actuator/            # モーター制御（TB6612FNG）                     ─ XIAO2
+│   ├── Deployer/            # ロケット分離・パラシュート分離（ニクロム線）・LED ─ XIAO1
 │   └── StateMachine/        # ミッションステート遷移ロジック（未統合）
 │
 ├── ground/

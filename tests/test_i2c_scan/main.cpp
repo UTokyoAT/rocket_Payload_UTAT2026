@@ -1,21 +1,26 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <DebugLog.h>
 
 // I2Cバス上の全アドレス(0x03-0x77)を総当たりでスキャンし、
 // 応答があったアドレスを一覧表示する。
 // PlatformIO で env:test-i2c-scan を選択して書き込む。
+// デバッグ出力はWiFi経由。CanSat-AP（パスワード: cansat2026）に接続して
+// http://192.168.4.1 を開くか、GET /log をポーリングする（USBシリアル不要）。
 //
 // 期待されるアドレス:
 //   0x14       BMM350（地磁気）
 //   0x68/0x69  MPU6050（6軸IMU）
 //   0x76/0x77  BMP280（気圧）
 
+static DebugLog debug;
+
 void setup() {
     Serial.begin(115200);
-    while (!Serial) {}
+    debug.begin();
 
     Wire.begin();
-    Serial.println("[TEST] I2C scan starting...");
+    debug.printf("[TEST] I2C scan starting...");
 }
 
 void loop() {
@@ -25,19 +30,15 @@ void loop() {
         Wire.beginTransmission(addr);
         uint8_t err = Wire.endTransmission();
         if (err == 0) {
-            Serial.print("[I2C] device found at 0x");
-            if (addr < 16) Serial.print("0");
-            Serial.println(addr, HEX);
+            debug.printf("[I2C] device found at 0x%02X", addr);
             found++;
         }
     }
 
     if (found == 0) {
-        Serial.println("[I2C] no device found on bus");
+        debug.printf("[I2C] no device found on bus");
     } else {
-        Serial.print("[I2C] scan done, ");
-        Serial.print(found);
-        Serial.println(" device(s) found");
+        debug.printf("[I2C] scan done, %d device(s) found", found);
     }
 
     // 0x68にMPU6050(またはクローンチップ)がいる場合、WHO_AM_I(reg 0x75)を読んで
@@ -48,12 +49,11 @@ void loop() {
         Wire.requestFrom((uint8_t)0x68, (uint8_t)1);
         if (Wire.available()) {
             uint8_t whoAmI = Wire.read();
-            Serial.print("[I2C] 0x68 WHO_AM_I = 0x");
-            Serial.println(whoAmI, HEX);
-            Serial.println("       (Adafruit_MPU6050 expects 0x68 here; other values = clone chip)");
+            debug.printf("[I2C] 0x68 WHO_AM_I = 0x%02X (Adafruit_MPU6050 expects 0x68; other values = clone chip)", whoAmI);
         }
     }
 
-    Serial.println("---");
+    debug.printf("---");
+    debug.poll();
     delay(2000);
 }

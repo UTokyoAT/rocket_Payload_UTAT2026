@@ -32,7 +32,15 @@ void taskSpiLink(void* arg) {
         }
         out.mission_state = static_cast<uint8_t>(state);
 
-        link.transfer(out);  // 応答フレームは現状未使用（SpiFrameFromXiao2参照）
+        SpiFrameFromXiao2 in = link.transfer(out);
+        if (in.goal_valid) {
+            // 地上局がXIAO2へGET /goalで設定した目的地。未設定の間はShared初期値のまま
+            if (xSemaphoreTake(s->mutex, pdMS_TO_TICKS(5))) {
+                s->goalLat = in.goal_lat;
+                s->goalLon = in.goal_lon;
+                xSemaphoreGive(s->mutex);
+            }
+        }
 
         vTaskDelayUntil(&last, pdMS_TO_TICKS(10));  // 100Hz（taskNavigationのPID出力周期に合わせる）
     }

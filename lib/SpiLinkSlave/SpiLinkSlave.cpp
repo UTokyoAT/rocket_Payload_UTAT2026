@@ -11,7 +11,7 @@ SpiLinkSlave::~SpiLinkSlave() {
 void SpiLinkSlave::begin() {
     _slave->setDataMode(SPI_MODE0);
     _slave->setQueueSize(1);
-    _slave->begin(FSPI, SpiPins::SCK, SpiPins::MISO, SpiPins::MOSI, SpiPins::CS);
+    _slave->begin(FSPI, SpiPins::SCK, SpiPins::MISO, SpiPins::MOSI, SpiPins::CS_SLAVE);
     _slave->queue(_txBuf, _rxBuf, SPI_FRAME_SIZE);
 }
 

@@ -4,12 +4,14 @@
 // XIAO1（マスター）⇔ XIAO2（スレーブ）間のSPI通信契約。
 // 変更する場合はSpiLinkMaster/SpiLinkSlave両方への影響を確認すること。
 
-// TODO: 実際のピン番号に変更する（回路図のSPI_SCK/SPI_MISO/SPI_MOSI/SPI_CSに合わせる）
+// Seeed XIAO ESP32S3のD番号 -> GPIO番号。SCK/MISO/MOSIはXIAO1・XIAO2共通配線（D8/D9/D10）。
+// CSはXIAO1(マスター)側の出力ピンとXIAO2(スレーブ)側の入力ピンが異なるGPIO番号のため分けている。
 namespace SpiPins {
-    constexpr int SCK  = 7;
-    constexpr int MISO = 8;
-    constexpr int MOSI = 9;
-    constexpr int CS   = 10;
+    constexpr int SCK  = 7;   // D8
+    constexpr int MISO = 8;   // D9
+    constexpr int MOSI = 9;   // D10
+    constexpr int CS_MASTER = 1;   // D0（XIAO1側）
+    constexpr int CS_SLAVE  = 44;  // D7（XIAO2側）
 }
 
 // XIAO1(マスター) → XIAO2(スレーブ)
@@ -43,10 +45,18 @@ struct __attribute__((packed)) SpiFrameToXiao2 {
 };
 
 // XIAO2(スレーブ) → XIAO1(マスター)
-// XIAO1はモータ出力を消費しない（WiFiテレメトリはXIAO2側が担当するため）ので現状未使用。
-// SPIは全二重のため転送自体は必要で、ダミーの応答バイトを返す。
+// 地上局がXIAO2へGET /goal?lat=..&lon=..で設定した目的地座標を、XIAO1の誘導PIDへ
+// 送り返す（XIAO1はWiFiを持たないため、目的地変更もこのSPI応答経由で受け取る）。
+// packed・パディング無しの9バイト、リトルエンディアン。
+//
+// offset  size  type     field       note
+//   0      1    uint8    goal_valid  地上局が一度でもGET /goalを送っていれば1
+//   1      4    float32  goal_lat    goal_valid=0の間は不定値。XIAO1側は無視して既定値を使う
+//   5      4    float32  goal_lon
 struct __attribute__((packed)) SpiFrameFromXiao2 {
-    uint8_t unused;
+    uint8_t goal_valid;
+    float goal_lat;
+    float goal_lon;
 };
 
 constexpr size_t SPI_FRAME_SIZE =

@@ -11,6 +11,10 @@ static int16_t  _motorCommandLeft  = 0;
 static int16_t  _motorCommandRight = 0;
 static uint32_t _motorCommandAt    = 0;
 
+static float _goalLat   = 0.0f;
+static float _goalLon   = 0.0f;
+static bool  _goalValid = false;
+
 void Radio::begin(const char* ssid, const char* password) {
     WiFi.softAP(ssid, password);
     Serial.printf("[Radio] SoftAP: %s  IP: %s\n",
@@ -35,6 +39,20 @@ void Radio::begin(const char* ssid, const char* password) {
         _motorCommandLeft  = static_cast<int16_t>(l);
         _motorCommandRight = static_cast<int16_t>(r);
         _motorCommandAt    = millis();
+        _server.send(200, "text/plain", "ok");
+    });
+
+    // 地上局からの目的地座標設定（GET /motorと同じPULL方向の運用）。
+    // 一度設定したらhasRecentMotorCommand()のようなタイムアウトはかけない
+    // （目的地は明示的に変更されるまで保持し続けるべきで、通信断で失われては困るため）。
+    _server.on("/goal", HTTP_GET, []() {
+        if (!_server.hasArg("lat") || !_server.hasArg("lon")) {
+            _server.send(400, "text/plain", "missing lat/lon");
+            return;
+        }
+        _goalLat   = _server.arg("lat").toFloat();
+        _goalLon   = _server.arg("lon").toFloat();
+        _goalValid = true;
         _server.send(200, "text/plain", "ok");
     });
 
@@ -65,6 +83,10 @@ int16_t Radio::getMotorCommandRight() {
 bool Radio::hasRecentMotorCommand() {
     return (millis() - _motorCommandAt) <= MOTOR_COMMAND_TIMEOUT_MS;
 }
+
+float Radio::getGoalLat() { return _goalLat; }
+float Radio::getGoalLon() { return _goalLon; }
+bool  Radio::hasGoal()    { return _goalValid; }
 
 void Radio::poll() { _server.handleClient(); }
 

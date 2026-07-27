@@ -13,10 +13,15 @@ Tkinter ウィンドウ（高度チャート・現在地/向き/目的地マッ�
 GET /motor?left=N&right=M として機体へ送り続ける（250ms間隔）。機体側は1秒間
 コマンドを受信しないと自動的に出力を0にするフェイルセイフを持つ。
 
+--dest-lat/--dest-lonを指定すると、地図表示・距離方位計算に使うだけでなく
+GET /goal?lat=..&lon=..として機体側（XIAO1の誘導PID）の実際の目的地も同じ
+座標に設定する（機体はSPI経由でXIAO1へ転送し、明示的に上書きされるまで保持する）。
+これにより地上局の表示上の目的地と機体が実際に向かう先が食い違わなくなる。
+
 使い方:
     pip install -r requirements.txt   # GUIのマップ描画に matplotlib を使用
     python receiver.py                                    # GUIあり（目的地なし）
-    python receiver.py --dest-lat 35.6820 --dest-lon 139.7670   # 目的地を指定
+    python receiver.py --dest-lat 35.6820 --dest-lon 139.7670   # 目的地を指定（機体にも反映）
     python receiver.py --headless     # ターミナル＋CSVのみ（Tkinter/matplotlibなし環境向け）
 """
 
@@ -151,6 +156,36 @@ def _send_motor_command(url: str, left: int, right: int, timeout_s: float) -> No
         urllib.request.urlopen(f"{url}?left={left}&right={right}", timeout=timeout_s)
     except (urllib.error.URLError, OSError, TimeoutError):
         pass
+
+
+class GoalSender(threading.Thread):
+    """起動時に指定された目的地を /goal へ送るバックグラウンドスレッド。
+
+    機体側 (Radio::hasGoal()) はモーターコマンドと異なりタイムアウトで無効化しないため
+    継続送信は不要だが、起動直後はまだWiFi接続やHTTPサーバーが立ち上がりきっていない
+    ことがあるため、成功する（HTTP 200が返る）まで一定間隔でリトライする。
+    """
+
+    def __init__(self, url: str, lat: float, lon: float, retry_interval_s: float,
+                 timeout_s: float, stop_event: threading.Event):
+        super().__init__(daemon=True)
+        self.url = url
+        self.lat = lat
+        self.lon = lon
+        self.retry_interval_s = retry_interval_s
+        self.timeout_s = timeout_s
+        self.stop_event = stop_event
+
+    def run(self) -> None:
+        while not self.stop_event.is_set():
+            try:
+                urllib.request.urlopen(
+                    f"{self.url}?lat={self.lat}&lon={self.lon}", timeout=self.timeout_s
+                )
+                return  # 機体側は明示的に上書きされるまで保持するので、成功したら送り続けなくてよい
+            except (urllib.error.URLError, OSError, TimeoutError):
+                pass
+            self.stop_event.wait(self.retry_interval_s)
 
 
 class MotorCommander(threading.Thread):
@@ -554,7 +589,8 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=0.5,
                          help="GETタイムアウト [秒]")
     parser.add_argument("--dest-lat", type=float, default=None,
-                         help="目的地の緯度（距離・方位・地図表示に使用。省略可）")
+                         help="目的地の緯度（距離・方位・地図表示に加え、GET /goalで機体側の実際の"
+                              "目的地としても設定する。省略可）")
     parser.add_argument("--dest-lon", type=float, default=None,
                          help="目的地の経度（--dest-latとセットで指定する）")
     parser.add_argument("--headless", action="store_true",
@@ -566,6 +602,7 @@ def main() -> None:
 
     url = f"http://{args.host}:{args.port}{args.path}"
     motor_url = f"http://{args.host}:{args.port}/motor"
+    goal_url = f"http://{args.host}:{args.port}/goal"
     print(f"Polling {url} every {args.interval_ms}ms ...")
     if args.dest_lat is not None:
         print(f"Destination: {args.dest_lat:.6f}, {args.dest_lon:.6f}")
@@ -575,6 +612,13 @@ def main() -> None:
     poller = Poller(url, args.interval_ms / 1000, args.timeout, out_queue, stop_event)
     recorder = Recorder()
     dest = DestinationTracker(args.dest_lat, args.dest_lon)
+
+    # --dest-lat/lonが指定されていれば、地図表示だけでなく機体側の実際の目的地
+    # （GET /goal）も同じ座標に揃える（表示上の目的地と機体が向かう先が食い違わないように）。
+    if args.dest_lat is not None:
+        goal_sender = GoalSender(goal_url, args.dest_lat, args.dest_lon,
+                                  retry_interval_s=2.0, timeout_s=0.5, stop_event=stop_event)
+        goal_sender.start()
 
     if args.headless:
         run_headless(poller, recorder, dest, out_queue, stop_event)

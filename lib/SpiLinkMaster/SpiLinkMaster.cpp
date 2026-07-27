@@ -2,9 +2,9 @@
 #include <cstring>
 
 void SpiLinkMaster::begin() {
-    pinMode(SpiPins::CS, OUTPUT);
-    digitalWrite(SpiPins::CS, HIGH);
-    SPI.begin(SpiPins::SCK, SpiPins::MISO, SpiPins::MOSI, SpiPins::CS);
+    pinMode(SpiPins::CS_MASTER, OUTPUT);
+    digitalWrite(SpiPins::CS_MASTER, HIGH);
+    SPI.begin(SpiPins::SCK, SpiPins::MISO, SpiPins::MOSI, SpiPins::CS_MASTER);
 }
 
 SpiFrameFromXiao2 SpiLinkMaster::transfer(const SpiFrameToXiao2& out) {
@@ -13,9 +13,9 @@ SpiFrameFromXiao2 SpiLinkMaster::transfer(const SpiFrameToXiao2& out) {
     memcpy(txBuf, &out, sizeof(out));
 
     SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
-    digitalWrite(SpiPins::CS, LOW);
+    digitalWrite(SpiPins::CS_MASTER, LOW);
     SPI.transferBytes(txBuf, rxBuf, SPI_FRAME_SIZE);
-    digitalWrite(SpiPins::CS, HIGH);
+    digitalWrite(SpiPins::CS_MASTER, HIGH);
     SPI.endTransaction();
 
     SpiFrameFromXiao2 in{};

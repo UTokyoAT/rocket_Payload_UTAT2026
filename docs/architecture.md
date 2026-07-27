@@ -88,8 +88,10 @@ lib/PID/             汎用PIDコントローラ                                
 lib/SpiLinkMaster/   XIAO2への送信＋応答受信（全二重SPI、標準SPIライブラリを使用）           ─ XIAO1
 lib/SpiLinkSlave/    XIAO1からのトランザクション受信（hideakitai/ESP32SPISlaveを使用）      ─ XIAO2
 lib/Radio/           WiFi SoftAP 立ち上げ・HTTP GET でバイナリフレーム配信（PULL方式）        ─ XIAO2
-lib/Actuator/        モーター（TB6612FNG、2ピン/モーター方式で左右独立駆動）・パラシュート・分離・ブザー・LED ─ XIAO2
+lib/Actuator/        モーター（TB6612FNG、3ピン/モーター＋共有STBY方式で左右独立駆動）         ─ XIAO2
+lib/Deployer/        ロケット分離・パラシュート分離（いずれもニクロム線でテグス溶断）・LED     ─ XIAO1
 lib/StateMachine/    ミッションステート遷移ロジック（未統合。TODO参照）
+lib/DebugLog/        WiFi SoftAP + HTTPでテキストログ配信（tests/配下の単体動作確認専用。本番では未使用）
 ```
 
 ---
@@ -116,7 +118,7 @@ lib/StateMachine/    ミッションステート遷移ロジック（未統合�
                             タイムアウト or ゴール到達
                                   │
                                   ▼
-                             GOAL/MISSING ── ブザー・LED点滅（回収支援）
+                             GOAL/MISSING ── LED点滅（回収支援）
 ```
 
 各遷移のトリガー：
@@ -152,6 +154,8 @@ WiFi/HTTPは**XIAO2**が担当する（XIAO1はSPI送信のみでWiFiを持た�
 
 このコマンドはXIAO2が直接WiFiで受信し、SPI経由の中継はしない（XIAO1はWiFiを持たないため関与しない）。手動操作と自律PID（XIAO1側で計算した`pid_output`）のどちらを優先するかは、`Radio::hasRecentMotorCommand()`（タイムアウト以内に手動コマンドを受信しているか）で`src/xiao2/main.cpp`の`loop()`が判定する。フラグではなく「直近に手動コマンドが来ているか」で判定するため、`SpiFrameToXiao2`側に調停フラグは持たない。
 
+誘導PIDの目的地座標は `GET /goal?lat=..&lon=..` で設定する。モーターコマンドと異なりタイムアウトで無効化されない（通信が途切れたからといって目的地を失わせるのは危険なため、明示的に上書きされるまで保持する）。この座標はXIAO1側の誘導計算（`task_navigation.h`）で使うため、XIAO2が受信した値をSPIの応答フレーム（`SpiFrameFromXiao2`、XIAO2→XIAO1方向）に載せてXIAO1へ送り返す。未設定の間は`Shared::goalLat/goalLon`（`include/shared.h`）の既定値を使う。`ground/receiver.py`は`--dest-lat`/`--dest-lon`起動引数を指定すると、地図表示用の目的地としてだけでなくこの`/goal`エンドポイントにも同じ座標を送るため、地上局の表示上の目的地と機体が実際に向かう先が食い違わない。
+
 なお `tests/test_navigation` はGPS方位とBMM350ヘディングの誤差をPIDで補正し左右モーターへ反映する自律航行の統合確認だが、これはSPIを経由しない（Actuatorを直接駆動するスタンドアロンテスト）。`src/xiao1/tasks/task_navigation.h` の誘導PIDロジックと同じ考え方の参考実装として位置づける。
 
 受信バイナリフレームフォーマット（リトルエンディアン、37バイト。`include/spi_protocol.h` の`SpiFrameToXiao2`をそのまま中継しているので詳細はそちら参照）：
@@ -182,8 +186,8 @@ XIAO1（マスター）                              XIAO2（スレーブ）
       │  ＝ SPI.transferBytes()（全二重）          │ ＝ ESP32SPISlaveのqueue/trigger方式
       │◄────────────────────────────────────────│ SpiLinkSlave::setResponse(out)
       ▼                                              │
-  （応答は未使用）                                     ├─ モータへ反映（pid_output or 手動コマンド）
-                                                       └─ Radio::setData()でWiFiテレメトリに反映
+  Shared::goalLat/goalLonを更新                        ├─ モータへ反映（pid_output or 手動コマンド）
+  （goal_valid=1のときのみ）                            └─ Radio::setData()でWiFiテレメトリに反映
 ```
 
 契約は `include/spi_protocol.h` にある。変更する場合は `lib/SpiLinkMaster` と `lib/SpiLinkSlave` 両方への影響を確認すること。
@@ -203,16 +207,20 @@ XIAO2はこのフレームをそのままWiFiテレメトリとしても中継�
 
 **XIAO2 → XIAO1（`SpiFrameFromXiao2`）**
 
-現状XIAO1側で消費するデータが無い（テレメトリはXIAO2が直接WiFiで配信するため）ため、ダミーの1バイトのみ。SPIが全二重方式のため転送自体は必要。
+| フィールド | 型 | 備考 |
+|---|---|---|
+| goal_valid | uint8 | 地上局が`GET /goal`を一度でも送っていれば1。0の間は`goal_lat/goal_lon`は不定値でXIAO1側は無視する |
+| goal_lat / goal_lon | float32 | 地上局が`GET /goal?lat=..&lon=..`で設定した目的地座標 |
+
+`taskSpiLink`が`goal_valid`を見て、真の場合のみ`Shared::goalLat/goalLon`を上書きする（未設定の間は`shared.h`の既定値のまま）。
 
 ### XIAO2側の処理（モータ駆動・WiFi中継）
 
-`src/xiao2/main.cpp` の `loop()` が、受信した`pid_output`を`BASE_SPEED ± pid_output`の左右差動出力に変換する（誘導・PID自体はXIAO1側の`task_navigation.h`で計算済み）。`Radio::hasRecentMotorCommand()`が真なら地上局からの手動コマンドを優先する。現状のTODO：
+`src/xiao2/main.cpp` の `loop()` が、受信した`pid_output`を`BASE_SPEED ± pid_output`の左右差動出力に変換する（誘導・PID自体はXIAO1側の`task_navigation.h`で計算済み）。`Radio::hasRecentMotorCommand()`が真なら地上局からの手動コマンドを優先する。ただしXIAO1からのSPIフレームが`SPI_LINK_TIMEOUT_MS`（5秒）以上途絶えた場合は、XIAO1側の異常とみなし手動コマンドより優先してモータを強制停止する（`lastSpiFrameMs`で最終受信時刻を追跡）。現状のTODO：
 
 - `BASE_SPEED`のミッションステート依存化（現状は固定値150）
-- XIAO1からの通信が一定時間途絶えた場合のフェイルセイフ（モータ停止）
 
 ### SPIピン・ビルド上の注意
 
-- ピン番号は `include/spi_protocol.h` の `SpiPins` 名前空間で定義（現状は仮値、回路図の実ピンに合わせて要修正）。
+- ピン番号は `include/spi_protocol.h` の `SpiPins` 名前空間で定義。SCK/MISO/MOSIはXIAO1・XIAO2共通（D8/D9/D10）だが、CSはXIAO1側`CS_MASTER`（D0）とXIAO2側`CS_SLAVE`（D7）で異なるGPIOに配線されているため分けて定義している。
 - XIAO2は `hideakitai/ESP32SPISlave` ライブラリに依存する（`platformio.ini` の `env:xiao2` にのみ追加）。マスター用（`lib/SpiLinkMaster`）とスレーブ用（`lib/SpiLinkSlave`）を別々のlibフォルダに分けているのは、PlatformIOのライブラリ依存解決がフォルダ単位でソースをコンパイルするため、同じフォルダに同居させるとXIAO1のビルドにもXIAO2専用ライブラリへの依存が混入してしまうことを避けるため。

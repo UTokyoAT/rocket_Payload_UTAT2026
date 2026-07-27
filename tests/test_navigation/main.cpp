@@ -3,12 +3,15 @@
 #include <GPS.h>
 #include <Actuator.h>
 #include <PID.h>
+#include <DebugLog.h>
 
 // GPS方位（目標地点への方位）とBMM350 heading（現在の進行方向）の誤差をPIDで
 // 補正し、左右モーター出力に反映する統合動作確認。
 // PlatformIO で env:test-navigation を選択して書き込む。
-// まずは実走行させず、車輪を浮かせた状態でSerial出力だけ確認すること
+// まずは実走行させず、車輪を浮かせた状態で確認すること
 // （PIDゲイン・BASE_SPEEDは実機でのチューニングが必要）。
+// デバッグ出力はWiFi経由。CanSat-AP（パスワード: cansat2026）に接続して
+// http://192.168.4.1 を開くか、GET /log をポーリングする（USBシリアル不要）。
 
 // TODO: 実際のゴール座標に置き換える
 static const double GOAL_LAT = 35.681236;
@@ -27,6 +30,7 @@ static const float MAGNETIC_DECLINATION_DEG = 7.667f;
 static Sensor sensor;
 static GPS gps;
 static Actuator actuator;
+static DebugLog debug;
 // TODO: 実機でゲイン調整。ループ周期を10Hz->100Hz目安に変更したため、
 // Ki/Kd項の実効的な効きがdtに応じて変わる点に注意して再チューニングすること
 static PID headingPid(2.0f, 0.0f, 0.5f, -255.0f, 255.0f);
@@ -42,9 +46,9 @@ static float normalizeAngle(float deg) {
 
 void setup() {
     Serial.begin(115200);
-    while (!Serial) {}
+    debug.begin();
 
-    Serial.println("[TEST] Navigation (GPS bearing + BMM350 heading -> PID -> motor) check starting...");
+    debug.printf("[TEST] Navigation (GPS bearing + BMM350 heading -> PID -> motor) check starting...");
     sensor.begin();
     gps.begin(GPS_RX_PIN, GPS_TX_PIN);
     actuator.begin();
@@ -55,6 +59,7 @@ void setup() {
 void loop() {
     gps.update();
     sensor.update();
+    debug.poll();
 
     uint32_t now = millis();
     float dt = (now - _lastUpdateMs) / 1000.0f;
@@ -63,7 +68,7 @@ void loop() {
     if (!gps.isValid()) {
         actuator.setMotorLeft(0);
         actuator.setMotorRight(0);
-        Serial.println("[TEST] waiting for GPS fix...");
+        debug.printf("[TEST] waiting for GPS fix...");
         delay(200);
         return;
     }
@@ -81,12 +86,11 @@ void loop() {
     actuator.setMotorLeft(left);
     actuator.setMotorRight(right);
 
-    // 115200baudでは1行のprintfだけで数ms消費し100Hzループを圧迫するため、
-    // モータ/PID更新は毎回行いつつSerial出力だけ間引く
+    // モータ/PID更新は毎回行いつつログ出力だけ間引く（リングバッファをすぐ埋めないため）
     if (++_printCounter >= 10) {
         _printCounter = 0;
-        Serial.printf("dt=%.3f bearing=%.1f heading=%.1f error=%.1f turn=%.1f left=%4d right=%4d dist=%.1fm\n",
-                      dt, bearing, heading, error, turn, left, right, distance);
+        debug.printf("dt=%.3f bearing=%.1f heading=%.1f error=%.1f turn=%.1f left=%4d right=%4d dist=%.1fm",
+                     dt, bearing, heading, error, turn, left, right, distance);
     }
 
     delay(10);  // 100Hz目安（実測dtでPID計算するので多少ズレても問題ない）
