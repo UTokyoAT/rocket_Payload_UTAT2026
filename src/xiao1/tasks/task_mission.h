@@ -20,7 +20,10 @@ static const uint32_t SETTING_TIMEOUT_MS = 10UL * 60 * 1000;
 static const float LAUNCH_ALT_THRESHOLD_M = 8.0f;
 static const int   LAUNCH_CONFIRM_TICKS   = 5;
 
-// DETACH: ロケット分離後、着地（高度変化が収まる）を検知（タイムアウトなし）
+// DETACH: ロケット分離後、着地（高度変化が収まる）を検知（タイムアウトなし）。
+// 1tickごとの差分だとセンサーノイズで振動するため、DETACH_ALT_SAMPLE_TICKS（100tick=1秒）
+// ごとに間引いて高度差分を取り、それがDETACH_CONFIRM_TICKS回続けて閾値未満なら着地とみなす。
+static const int   DETACH_ALT_SAMPLE_TICKS      = 100;
 static const float DETACH_ALT_DELTA_THRESHOLD_M = 1.0f;
 static const int   DETACH_CONFIRM_TICKS         = 5;
 
@@ -51,6 +54,7 @@ void taskMission(void* arg) {
     bool  detachAltInitialized = false;
     float lastAltForDetach = 0.0f;
     int   detachConfirmCount = 0;
+    int   detachTickCount = 0;
 
     // UNFOLD用（直近UNFOLD_STABLE_WINDOW_TICKS件のroll/pitchのリングバッファ）
     float unfoldRollBuf[UNFOLD_STABLE_WINDOW_TICKS];
@@ -80,6 +84,7 @@ void taskMission(void* arg) {
         launchConfirmCount = 0;
         detachAltInitialized = false;
         detachConfirmCount = 0;
+        detachTickCount = 0;
         unfoldBufCount = 0;
         unfoldBufIndex = 0;
         unfoldUprightCount = 0;
@@ -144,12 +149,15 @@ void taskMission(void* arg) {
                 if (!detachAltInitialized) {
                     lastAltForDetach = alt;
                     detachAltInitialized = true;
-                }
-                float delta = fabsf(alt - lastAltForDetach);
-                lastAltForDetach = alt;
-                detachConfirmCount = (delta < DETACH_ALT_DELTA_THRESHOLD_M) ? detachConfirmCount + 1 : 0;
-                if (detachConfirmCount >= DETACH_CONFIRM_TICKS) {
-                    transitionTo(MissionState::UNFOLD);
+                    detachTickCount = 0;
+                } else if (++detachTickCount >= DETACH_ALT_SAMPLE_TICKS) {
+                    float delta = fabsf(alt - lastAltForDetach);
+                    lastAltForDetach = alt;
+                    detachTickCount = 0;
+                    detachConfirmCount = (delta < DETACH_ALT_DELTA_THRESHOLD_M) ? detachConfirmCount + 1 : 0;
+                    if (detachConfirmCount >= DETACH_CONFIRM_TICKS) {
+                        transitionTo(MissionState::UNFOLD);
+                    }
                 }
                 break;
             }

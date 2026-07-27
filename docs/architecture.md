@@ -17,7 +17,7 @@ XIAO1 ────────────────────────�
 | 主なlib | Sensor, GPS, PID, Deployer, SpiLinkMaster | Radio, Actuator, SpiLinkSlave |
 | PlatformIO env | `xiao1` | `xiao2` |
 
-XIAO1が姿勢・GPS・誘導PID出力までSPIで計算しきってXIAO2へ送り、XIAO2はそれをそのままモータへ反映しつつ、同じフレームをWiFiで地上局へ中継する（地上局からの手動操作コマンドもXIAO2が直接WiFiで受信し、SPI経由の中継はしない）。
+XIAO1が姿勢・GPS・誘導PID出力まで計算しきってSPIでXIAO2へ送り、XIAO2はそれをそのままモータへ反映しつつ、同じフレームをWiFiで地上局へ中継する（地上局からの手動操作コマンドもXIAO2が直接WiFiで受信し、SPI経由の中継はしない）。
 
 SPI通信の詳細（フレームフォーマット・ピン）は末尾の「[XIAO1 ⇔ XIAO2 通信（SPI）](#xiao1--xiao2-通信spi)」を参照。
 
@@ -107,7 +107,7 @@ lib/DebugLog/        WiFi SoftAP + HTTPでテキストログ配信（tests/配�
 ```
 SETTING ──衛星10個以上を捕捉──► LAUNCH ──高度8m超を5tick連続検知──► DETACH
    │ 10分タイムアウト                                                  │ deployRocket()
-   ▼                                                                    │ 高度変化1m未満を5tick連続検知
+   ▼                                                                    │ 高度変化1m未満を100tickごとに5回連続検知
 ABORTED ◄───────────────────────────────────────────────────────────────┤
    ▲                                                                    ▼
    │ 5分タイムアウト                                                 UNFOLD
@@ -130,11 +130,13 @@ ABORTED ◄───────────────────────
 | SETTING → LAUNCH | GPS衛星捕捉数が`SETTING_MIN_SATELLITES`（10個）以上、かつfix取得済み。このとき現在のGPS座標を`Shared::goalLat/goalLon`（＝打ち上げ地点）として記録する |
 | SETTING → ABORTED | `SETTING_TIMEOUT_MS`（10分）経過しても衛星10個に届かない |
 | LAUNCH → DETACH | 高度が`LAUNCH_ALT_THRESHOLD_M`（8m）を`LAUNCH_CONFIRM_TICKS`（5tick=0.05秒）連続で超える。タイムアウトなし（発射操作を待ち続ける） |
-| DETACH → UNFOLD | 遷移時に`Deployer::deployRocket()`（ロケットから分離）。以後、1tickごとの高度変化が`DETACH_ALT_DELTA_THRESHOLD_M`（1m）未満を`DETACH_CONFIRM_TICKS`（5tick=0.05秒）連続で検知＝着地。タイムアウトなし |
+| DETACH → UNFOLD | 遷移時に`Deployer::deployRocket()`（ロケットから分離）。以後、`DETACH_ALT_SAMPLE_TICKS`（100tick=1秒）ごとにサンプリングした高度変化が`DETACH_ALT_DELTA_THRESHOLD_M`（1m）未満を`DETACH_CONFIRM_TICKS`（5回連続＝計5秒相当）検知＝着地。タイムアウトなし |
 | UNFOLD → NAVIGATE | 遷移時に`Deployer::deployParachute()`（パラシュート分離）。直近`UNFOLD_STABLE_WINDOW_TICKS`（10tick=0.1秒）のroll/pitch変化幅がともに`UNFOLD_STABLE_RANGE_DEG`（10度）以下、かつ`abs(roll)`/`abs(pitch)`がともに`UNFOLD_UPRIGHT_ABS_DEG`（20度）以下を`UNFOLD_UPRIGHT_CONFIRM_TICKS`（5tick=0.05秒）連続で検知 |
 | UNFOLD → ABORTED | `UNFOLD_TIMEOUT_MS`（5分）経過しても上記条件を満たさない（変化は収まった＝安定したが20度以内に収まらない＝回収不能と判断） |
 | NAVIGATE → GOAL | `Shared::goalLat/goalLon`へ向けた自律走行中、緯度・経度**どちらも**変化が新規GPS fixで`NAVIGATE_STOP_DELTA_DEG`（0.00001度）以下を`NAVIGATE_STOP_CONFIRM_FIXES`（5回）連続で検知＝停止（到達）。片方だけで判定すると、進行方向が南北/東西に近いときもう片方の軸がほぼ動かず誤検知するためAND条件にしている |
 | NAVIGATE → ABORTED | `NAVIGATE_TIMEOUT_MS`（10分）経過しても停止を検知できない |
+
+**DETACHの着地判定を1tickではなく100tickごとに間引く理由**：1tick（10ms）間隔の生の高度差分は気圧センサーのノイズで振動しやすく、着地していなくても閾値未満に見えて誤検知しかねない。そのため`DETACH_ALT_SAMPLE_TICKS`（100tick=1秒）間隔で高度をサンプリングして差分を取り、そのサンプル単位で`DETACH_CONFIRM_TICKS`（5回）連続して閾値未満なら着地と判定する（着地判定にかかる時間は合計で約5秒）。
 
 **NAVIGATEの停止判定だけ「tick」ではなく「GPS fix到着回数」で数える理由**：GPSは実際には1Hz程度でしか更新されないため、taskMissionの10ms周期でそのまま緯度経度をサンプリングすると、同じ古い値を何度も連続で読んでしまい「移動していない」と誤判定しかねない。そのため`taskGPS`が新規fix受信のたびインクリメントする`SensorData::gpsFixSeq`の変化を検知したときだけ判定する。
 
