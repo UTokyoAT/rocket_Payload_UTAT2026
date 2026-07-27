@@ -26,7 +26,7 @@ GET /goal?lat=..&lon=..   ◄── ok ─ 6. receiver.py が --dest-lat/--dest-
 
 ## 単体動作確認テスト（tests/）のデバッグ出力
 
-`tests/` 配下の各動作確認コード（`test_bmm350`・`test_bmp280`・`test_gps`・`test_i2c_scan`・`test_motor`・`test_mpu6050`・`test_navigation`）は、USBシリアルではなく **WiFi経由** でログを出す（`lib/DebugLog`）。卓上でUSBケーブルを挿さなくても、PCやスマホから確認できる。
+`tests/` 配下の各動作確認コード（`test_bmm350`・`test_bmp280`・`test_gps`・`test_i2c_scan`・`test_motor`・`test_mpu6050`）は、USBシリアルではなく **WiFi経由** でログを出す（`lib/DebugLog`）。卓上でUSBケーブルを挿さなくても、PCやスマホから確認できる。
 
 1. PCのWiFiを **CanSat-AP** に接続（パスワード: `cansat2026`）
 2. ブラウザで `http://192.168.4.1` を開く（300ms間隔で自動更新される簡易ログビューア）
@@ -35,6 +35,18 @@ GET /goal?lat=..&lon=..   ◄── ok ─ 6. receiver.py が --dest-lat/--dest-
 本番ファームウェア（XIAO2の`lib/Radio`）と同じSSID/パスワードを使っているため、複数の基板・テストを同時にAPとして起動しないこと（同じSSIDが衝突する。1枚ずつ書き込んで確認する運用を前提にしている）。
 
 `Serial.begin(115200)`自体は残しているため、USBシリアルを接続していれば`DebugLog::printf()`の内容はそちらにも同時出力される（WiFiが使えない環境でのフォールバック）。
+
+---
+
+## test_navigation（XIAO1単体の誘導PID確認）
+
+`tests/test_navigation`はXIAO1単体で誘導ロジックだけを素早く確認するためのテスト（`lib/DebugLog`ではなく`lib/Radio`を流用しており、本番の`/data`と同じフレームで見える）。
+
+1. PCのWiFiを **CanSat-AP** に接続（パスワード: `cansat2026`）
+2. `GET http://192.168.4.1/goal?lat=..&lon=..` で目的地を送る（ブラウザのアドレスバーでも`curl`でもよい）
+3. ブラウザで `http://192.168.4.1` を開くか`receiver.py --host 192.168.4.1`で`pid_output`・`destination_yaw`・`yaw`・GPS座標を確認する
+
+GPS fixを取得できていない、または目的地を一度も送っていない間はモーターが動かない（`pid_output`は0のまま）。動作確認するモーターは本番のXIAO2用配線ではなく、このテスト専用にD0-D3へ仮配線する（`tests/test_navigation/main.cpp`冒頭のコメント参照）。まずは車輪を浮かせた状態で確認すること。
 
 ---
 

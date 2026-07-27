@@ -3,12 +3,13 @@
 #include <Deployer.h>
 
 // ミッションのシーケンス状態機械（SETTING→LAUNCH→DETACH→UNFOLD→NAVIGATE→GOAL）。
-// 各しきい値・tick数は運用フローチャートに合わせている。「tick」は本タスク自身の
-// 周期（MISSION_TICK_MS、フローチャートの「5 tick（0.05s）」に合わせて50ms）を指す。
+// 「tick」は本タスク自身の周期（MISSION_TICK_MS=10ms）を指す。tick数（LAUNCH_CONFIRM_TICKS等）は
+// 50ms周期だった頃の値のまま据え置いているため、各確認時間は5分の1に短縮されている
+// （例: LAUNCH_CONFIRM_TICKS=5は50ms→10ms化に伴い0.25秒から0.05秒相当になった）。
 // ただしNAVIGATEの停止判定だけはGPSの実際の更新間隔（約1Hz）に依存するため、
-// 50ms tickではなく新規GPS fix（SensorData::gpsFixSeq）の到着回数で数える。
+// tick数ではなく新規GPS fix（SensorData::gpsFixSeq）の到着回数で数える。
 
-static const uint32_t MISSION_TICK_MS = 50;
+static const uint32_t MISSION_TICK_MS = 10;
 
 // SETTING: 気圧ベースラインはSensor::begin()で校正済み。ここではGPS衛星捕捉と
 // 目的地（打ち上げ地点）座標の取得を待つ。
@@ -192,7 +193,9 @@ void taskMission(void* arg) {
                     if (navigateFixInitialized) {
                         double deltaLat = fabs(lat - lastFixLat);
                         double deltaLon = fabs(lon - lastFixLon);
-                        bool stopped = (deltaLat <= NAVIGATE_STOP_DELTA_DEG) ||
+                        // 進行方向が南北/東西いずれかに近いと片方の軸だけほぼ変化しなくなるため、
+                        // 両軸とも動いていないことを確認する（ORだと直進中でも誤検知する）
+                        bool stopped = (deltaLat <= NAVIGATE_STOP_DELTA_DEG) &&
                                        (deltaLon <= NAVIGATE_STOP_DELTA_DEG);
                         navigateStopCount = stopped ? navigateStopCount + 1 : 0;
                     }
