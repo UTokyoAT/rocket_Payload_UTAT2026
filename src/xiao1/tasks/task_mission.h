@@ -34,7 +34,11 @@ static const float    UNFOLD_STABLE_RANGE_DEG     = 10.0f;
 static const int      UNFOLD_UPRIGHT_CONFIRM_TICKS = 5;
 static const float    UNFOLD_UPRIGHT_ABS_DEG       = 20.0f;
 
-// NAVIGATE: GNSS誘導で目的地（打ち上げ地点）へ走行し、停止（到達）を検知
+// NAVIGATE: GNSS誘導で目的地（打ち上げ地点）へ走行し、停止（到達）を検知。
+// 1回でも両軸の変化がNAVIGATE_STOP_DELTA_DEG以下の新規fixを検知したら「停止候補」とし、
+// そこから改めてNAVIGATE_STOP_CONFIRM_FIXES回分の新規fixすべてが閾値以下であることを
+// 再確認できてはじめてGOALへ遷移する（再確認中に1回でも超えたら停止候補を取り消し、
+// 次に閾値以下を検知するところからやり直す）。
 static const uint32_t NAVIGATE_TIMEOUT_MS          = 10UL * 60 * 1000;
 static const int      NAVIGATE_STOP_CONFIRM_FIXES  = 5;
 static const double   NAVIGATE_STOP_DELTA_DEG      = 0.00001;
@@ -68,6 +72,7 @@ void taskMission(void* arg) {
     uint32_t lastGpsFixSeq = 0;
     double   lastFixLat = 0.0;
     double   lastFixLon = 0.0;
+    bool     navigateStopTriggered = false;
     int      navigateStopCount = 0;
 
     // 状態遷移のたびに各状態専用のカウンタをリセットし、DETACH/UNFOLD突入時は
@@ -89,6 +94,7 @@ void taskMission(void* arg) {
         unfoldBufIndex = 0;
         unfoldUprightCount = 0;
         navigateFixInitialized = false;
+        navigateStopTriggered = false;
         navigateStopCount = 0;
 
         if (next == MissionState::DETACH) {
@@ -205,7 +211,19 @@ void taskMission(void* arg) {
                         // 両軸とも動いていないことを確認する（ORだと直進中でも誤検知する）
                         bool stopped = (deltaLat <= NAVIGATE_STOP_DELTA_DEG) &&
                                        (deltaLon <= NAVIGATE_STOP_DELTA_DEG);
-                        navigateStopCount = stopped ? navigateStopCount + 1 : 0;
+                        if (!navigateStopTriggered) {
+                            // 1回でも両軸が閾値以下なら即座に停止候補とし、以後の新規fixで再確認する
+                            if (stopped) {
+                                navigateStopTriggered = true;
+                                navigateStopCount = 0;
+                            }
+                        } else if (stopped) {
+                            navigateStopCount++;
+                        } else {
+                            // 再確認中に閾値を超えた＝停止ではなかった。候補を取り消し最初から数え直す
+                            navigateStopTriggered = false;
+                            navigateStopCount = 0;
+                        }
                     }
                     lastFixLat = lat;
                     lastFixLon = lon;
@@ -213,7 +231,7 @@ void taskMission(void* arg) {
                     navigateFixInitialized = true;
                 }
 
-                if (navigateStopCount >= NAVIGATE_STOP_CONFIRM_FIXES) {
+                if (navigateStopTriggered && navigateStopCount >= NAVIGATE_STOP_CONFIRM_FIXES) {
                     transitionTo(MissionState::GOAL);
                 } else if (elapsed > NAVIGATE_TIMEOUT_MS) {
                     transitionTo(MissionState::ABORTED);

@@ -116,8 +116,8 @@ ABORTED ◄───────────────────────
                                                                         │ かつ絶対値20度以下を5tick連続検知
                                                                         ▼
    ABORTED ◄── 10分タイムアウト（停止を検知できず） ──────────── NAVIGATE
-      │                                                                 │ 緯度・経度どちらも変化が
-      │                                                                 │ 0.00001度以下を新規fix5回連続検知
+      │                                                                 │ 緯度・経度どちらも変化が0.00001度以下を
+      │                                                                 │ 新規fixで1回検知→以後5回連続で再確認
       ▼                                                                 ▼
   LED点滅で異常を通知し続ける                                          GOAL ── LED点滅（回収支援）
   （モータはNAVIGATE以外では動かないため自然に停止する）
@@ -133,12 +133,14 @@ ABORTED ◄───────────────────────
 | DETACH → UNFOLD | 遷移時に`Deployer::deployRocket()`（ロケットから分離）。以後、`DETACH_ALT_SAMPLE_TICKS`（100tick=1秒）ごとにサンプリングした高度変化が`DETACH_ALT_DELTA_THRESHOLD_M`（1m）未満を`DETACH_CONFIRM_TICKS`（5回連続＝計5秒相当）検知＝着地。タイムアウトなし |
 | UNFOLD → NAVIGATE | 遷移時に`Deployer::deployParachute()`（パラシュート分離）。直近`UNFOLD_STABLE_WINDOW_TICKS`（10tick=0.1秒）のroll/pitch変化幅がともに`UNFOLD_STABLE_RANGE_DEG`（10度）以下、かつ`abs(roll)`/`abs(pitch)`がともに`UNFOLD_UPRIGHT_ABS_DEG`（20度）以下を`UNFOLD_UPRIGHT_CONFIRM_TICKS`（5tick=0.05秒）連続で検知 |
 | UNFOLD → ABORTED | `UNFOLD_TIMEOUT_MS`（5分）経過しても上記条件を満たさない（変化は収まった＝安定したが20度以内に収まらない＝回収不能と判断） |
-| NAVIGATE → GOAL | `Shared::goalLat/goalLon`へ向けた自律走行中、緯度・経度**どちらも**変化が新規GPS fixで`NAVIGATE_STOP_DELTA_DEG`（0.00001度）以下を`NAVIGATE_STOP_CONFIRM_FIXES`（5回）連続で検知＝停止（到達）。片方だけで判定すると、進行方向が南北/東西に近いときもう片方の軸がほぼ動かず誤検知するためAND条件にしている |
+| NAVIGATE → GOAL | `Shared::goalLat/goalLon`へ向けた自律走行中、緯度・経度**どちらも**変化が新規GPS fixで`NAVIGATE_STOP_DELTA_DEG`（0.00001度）以下であることを1回でも検知したら「停止候補」とし、そこから改めて新規fix`NAVIGATE_STOP_CONFIRM_FIXES`（5回）分すべてが同条件を満たすことを再確認できたら＝停止（到達）。再確認中に1回でも超えたら候補を取り消し、次に条件を満たす新規fixが来るところから数え直す。片方だけで判定すると、進行方向が南北/東西に近いときもう片方の軸がほぼ動かず誤検知するためAND条件にしている |
 | NAVIGATE → ABORTED | `NAVIGATE_TIMEOUT_MS`（10分）経過しても停止を検知できない |
 
 **DETACHの着地判定を1tickではなく100tickごとに間引く理由**：1tick（10ms）間隔の生の高度差分は気圧センサーのノイズで振動しやすく、着地していなくても閾値未満に見えて誤検知しかねない。そのため`DETACH_ALT_SAMPLE_TICKS`（100tick=1秒）間隔で高度をサンプリングして差分を取り、そのサンプル単位で`DETACH_CONFIRM_TICKS`（5回）連続して閾値未満なら着地と判定する（着地判定にかかる時間は合計で約5秒）。
 
 **NAVIGATEの停止判定だけ「tick」ではなく「GPS fix到着回数」で数える理由**：GPSは実際には1Hz程度でしか更新されないため、taskMissionの10ms周期でそのまま緯度経度をサンプリングすると、同じ古い値を何度も連続で読んでしまい「移動していない」と誤判定しかねない。そのため`taskGPS`が新規fix受信のたびインクリメントする`SensorData::gpsFixSeq`の変化を検知したときだけ判定する。
+
+**NAVIGATEの停止判定が「1回検知→改めて5回再確認」の2段構えになっている理由**：最初から5回連続一致を要求すると、たまたま最初の数回だけ条件を満たさなかった場合に0からやり直しになり判定が遅れる。そこで1回でも条件を満たした時点をいったん「停止候補」として記録し、そこから独立に5回分の新規fixで再確認する。再確認の途中で1回でも条件を外れたら停止候補を取り消し、次に条件を満たす新規fixが来たところから改めて5回のカウントを始める。
 
 **ABORTED/GOALの共通挙動**：`Deployer::beepPattern()`を呼び続けてLEDを点滅させ、回収支援の位置知らせを継続する。区別はテレメトリの`mission_state`の値で行う。モータはXIAO2側で`MissionState::NAVIGATE`のときしか自律走行しないため（後述）、ABORTED/GOALでは特別な停止処理をせずとも自然にモータが止まる。
 
