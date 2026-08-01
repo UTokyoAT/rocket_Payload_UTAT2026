@@ -68,6 +68,16 @@ bool Sensor::begin() {
     if (!_bmp280Ready) {
         Serial.println("[Sensor] BMP280 not found");
     } else {
+        // begin()デフォルト(osrs_t=x16, osrs_p=x16, filter=OFF)は1回の変換に約75ms
+        // かかり100Hz更新と両立しないため、オーバーサンプリングをx1に落として
+        // 変換時間を約6.4msに抑え、その分をIIRフィルタ(x16)でノイズ平滑化する。
+        // フィルタ自体は変換時間に影響しないため100Hzを維持したまま最強設定にできる。
+        _bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
+                          Adafruit_BMP280::SAMPLING_X1,
+                          Adafruit_BMP280::SAMPLING_X1,
+                          Adafruit_BMP280::FILTER_X16,
+                          Adafruit_BMP280::STANDBY_MS_1);
+
         // 地上（打ち上げ前）の気圧を基準点としてキャリブレーションする。
         // 複数回サンプリングして平均を取りノイズを減らす。
         float sum = 0.0f;
