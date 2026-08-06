@@ -232,6 +232,10 @@ float Sensor::getPitch()     { return _pitch; }
 float Sensor::getYaw()       { return _yaw; }
 float Sensor::getAccelMag()  { return sqrtf(_accelX * _accelX + _accelY * _accelY + _accelZ * _accelZ); }
 
+float Sensor::getMagX() { return _magX; }
+float Sensor::getMagY() { return _magY; }
+float Sensor::getMagZ() { return _magZ; }
+
 bool Sensor::isBmp280Ready()  { return _bmp280Ready; }
 bool Sensor::isMpu6050Ready() { return _mpu6050Ready; }
 bool Sensor::isBmm350Ready()  { return _bmm350Ready; }

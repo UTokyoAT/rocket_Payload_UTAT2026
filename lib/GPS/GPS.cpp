@@ -27,6 +27,10 @@ float GPS::distanceTo(double lat, double lon) {
     return (float)TinyGPSPlus::distanceBetween(getLat(), getLon(), lat, lon);
 }
 
+float GPS::getCourse()   { return (float)_gps.course.deg(); }
+bool  GPS::isCourseValid() { return _gps.course.isValid(); }
+float GPS::getSpeedMps() { return (float)_gps.speed.mps(); }
+
 uint32_t GPS::charsProcessed()      { return _gps.charsProcessed(); }
 uint32_t GPS::failedChecksumCount() { return _gps.failedChecksum(); }
 int      GPS::satellites()          { return _gps.satellites.isValid() ? _gps.satellites.value() : 0; }
