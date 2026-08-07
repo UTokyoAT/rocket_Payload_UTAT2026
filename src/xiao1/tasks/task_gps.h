@@ -2,10 +2,9 @@
 #include "shared.h"
 #include <GPS.h>
 
-// XIAO ESP32S3: D6(GPIO43)にGPSモジュールのTXを、D7(GPIO44)にGPSモジュールのRXを接続
-// （回路図のネット名がD6=UART_RX、D7=UART_TXになっているため、それに合わせた割り当て）
-static const int GPS_RX_PIN = 43;  // D6
-static const int GPS_TX_PIN = 44;  // D7
+// XIAO ESP32S3: D7(GPIO44)にGPSモジュールのTXを、D6(GPIO43)にGPSモジュールのRXを接続
+static const int GPS_RX_PIN = 44;  // D7
+static const int GPS_TX_PIN = 43;  // D6
 
 void taskGPS(void* arg) {
     Shared* s = static_cast<Shared*>(arg);

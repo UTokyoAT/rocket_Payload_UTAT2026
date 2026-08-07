@@ -22,7 +22,10 @@ static uint32_t lastSpiFrameMs = 0;
 static const uint32_t SPI_LINK_TIMEOUT_MS = 5000;
 
 // TODO: ミッションステートに応じて前進速度を調整
-static const int16_t BASE_SPEED = 150;
+// GPS/地磁気トラブル対応のtest_dead_reckoning（推測航法テスト）が直進フェーズを
+// 「最大出力」で行う前提のため255（最大）にしてある。本番のGPS誘導NAVIGATEでも
+// このBASE_SPEEDをそのまま使うため、誘導精度に問題が出るようなら要調整。
+static const int16_t BASE_SPEED = 255;
 
 // XIAO1が計算した誘導PID出力（旋回量）をbase±turnの左右差動出力に変換する。
 static void computeAutonomousMotor(float pidOutput, int16_t& outLeft, int16_t& outRight) {

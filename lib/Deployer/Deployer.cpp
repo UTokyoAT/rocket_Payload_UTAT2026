@@ -2,7 +2,7 @@
 
 // XIAO1実配線（Seeed XIAO ESP32S3のD番号 -> GPIO番号）
 // deployRocket: D1(GPIO2)  deployParachute: D3(GPIO4)  LED: D2(GPIO3、空きピン)
-// I2C(SDA/SCL)=D4/D5、UART(RX/TX)=D6/D7、SPI(SpiLinkMaster)はSCK/MISO/MOSI=D8/D9/D10、CS=D0
+// I2C(SDA/SCL)=D4/D5、UART(RX/TX)=D7/D6、SPI(SpiLinkMaster)はSCK/MISO/MOSI=D8/D9/D10、CS=D0
 static const int PIN_ROCKET    = 2;
 static const int PIN_PARACHUTE = 4;
 static const int PIN_LED       = 3;
