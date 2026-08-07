@@ -17,7 +17,7 @@ static const int      SETTING_MIN_SATELLITES = 10;
 static const uint32_t SETTING_TIMEOUT_MS = 10UL * 60 * 1000;
 
 // LAUNCH: 打ち上げ検知（タイムアウトなし。発射操作を待ち続ける）
-static const float LAUNCH_ALT_THRESHOLD_M = 8.0f;
+static const float LAUNCH_ALT_THRESHOLD_M = 3.0f;
 static const int   LAUNCH_CONFIRM_TICKS   = 5;
 
 // DETACH: ロケット分離後、着地（高度変化が収まる）を検知（タイムアウトなし）。

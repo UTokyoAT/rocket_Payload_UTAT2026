@@ -9,7 +9,7 @@
 // shared.h（XIAO1専用）ではなくXIAO1・XIAO2共通のこのヘッダで定義する。
 enum class MissionState : uint8_t {
     SETTING,   // 起動直後。気圧ベースライン校正・GPS衛星捕捉待ち・目的地（打ち上げ地点）取得
-    LAUNCH,    // 打ち上げ検知待ち（高度8m超を5tick連続検知）
+    LAUNCH,    // 打ち上げ検知待ち（高度3m超を5tick連続検知）
     DETACH,    // ロケットから分離（ニクロム線）・パラシュート降下中の着地検知待ち
     UNFOLD,    // パラシュート分離（ニクロム線）・姿勢安定確認
     NAVIGATE,  // GNSS誘導で打ち上げ地点へ自律走行

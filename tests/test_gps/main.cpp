@@ -7,9 +7,10 @@
 // デバッグ出力はWiFi経由。CanSat-AP（パスワード: cansat2026）に接続して
 // http://192.168.4.1 を開くか、GET /log をポーリングする（USBシリアル不要）。
 
-// XIAO ESP32S3: D7(GPIO44)にGPSモジュールのTXを、D6(GPIO43)にGPSモジュールのRXを接続
-static const int GPS_RX_PIN = 44;  // D7 - GPSモジュールのTXへ接続
-static const int GPS_TX_PIN = 43;  // D6 - GPSモジュールのRXへ接続
+// XIAO ESP32S3: D6(GPIO43)にGPSモジュールのTXを、D7(GPIO44)にGPSモジュールのRXを接続
+// （回路図のネット名がD6=UART_RX、D7=UART_TXになっているため、それに合わせた割り当て）
+static const int GPS_RX_PIN = 43;  // D6 - GPSモジュールのTXへ接続
+static const int GPS_TX_PIN = 44;  // D7 - GPSモジュールのRXへ接続
 static const uint32_t GPS_BAUD = 9600;
 
 static GPS gps;
