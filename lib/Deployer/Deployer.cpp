@@ -15,7 +15,7 @@ void Deployer::begin() {
 
 void Deployer::deployRocket() {
     digitalWrite(PIN_ROCKET, HIGH);
-    delay(3000);
+    delay(2000);
     digitalWrite(PIN_ROCKET, LOW);
 }
 
