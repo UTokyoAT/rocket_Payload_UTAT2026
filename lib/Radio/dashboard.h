@@ -59,8 +59,8 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
       </div>
     </div>
     <div class="card">
-      <div class="label">MOTOR OUTPUT (L / R)</div>
-      <div class="value small"><span id="motorL">--</span> / <span id="motorR">--</span></div>
+      <div class="label">PID OUTPUT / DEST YAW</div>
+      <div class="value small"><span id="pidOutput">--</span> / <span id="destYaw">--</span>°</div>
     </div>
   </div>
 
@@ -70,7 +70,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
   </div>
 
   <script>
-    const STATE_NAMES = ["STANDBY","ASCENDING","DESCENDING","SEPARATING","RUNNING","GOAL"];
+    const STATE_NAMES = ["SETTING","LAUNCH","DETACH","UNFOLD","NAVIGATE","GOAL","ABORTED"];
     const MAX_PTS = 300;
     const altBuf = [];
     const canvas = document.getElementById('chart');
@@ -99,24 +99,24 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
       ctx.fillText(min.toFixed(1) + 'm', 4, h - 4);
     }
 
-    // /data はPULL方式のバイナリフレーム（33バイト、リトルエンディアン）。
-    // レイアウトは lib/Radio/Radio.h のコメントおよび ground/receiver.py と共通。
+    // /data はPULL方式のバイナリフレーム（37バイト、リトルエンディアン）。
+    // レイアウトは include/spi_protocol.h (SpiFrameToXiao2) および ground/receiver.py と共通。
     const POLL_MS = 150;
     const el = document.getElementById('status');
 
     function decode(buf) {
       const v = new DataView(buf);
       return {
-        t:      v.getUint32(0, true),
-        alt:    v.getFloat32(4, true),
-        roll:   v.getFloat32(8, true),
-        pitch:  v.getFloat32(12, true),
-        yaw:    v.getFloat32(16, true),
-        lat:    v.getFloat32(20, true),
-        lon:    v.getFloat32(24, true),
-        state:  v.getUint8(28),
-        motorL: v.getInt16(29, true),
-        motorR: v.getInt16(31, true),
+        t:         v.getUint32(0, true),
+        alt:       v.getFloat32(4, true),
+        roll:      v.getFloat32(8, true),
+        pitch:     v.getFloat32(12, true),
+        yaw:       v.getFloat32(16, true),
+        lat:       v.getFloat32(20, true),
+        lon:       v.getFloat32(24, true),
+        state:     v.getUint8(28),
+        pidOutput: v.getFloat32(29, true),
+        destYaw:   v.getFloat32(33, true),
       };
     }
 
@@ -136,8 +136,8 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
         document.getElementById('yaw').textContent   = d.yaw.toFixed(1);
         document.getElementById('lat').textContent   = d.lat.toFixed(6);
         document.getElementById('lon').textContent   = d.lon.toFixed(6);
-        document.getElementById('motorL').textContent = d.motorL;
-        document.getElementById('motorR').textContent = d.motorR;
+        document.getElementById('pidOutput').textContent = d.pidOutput.toFixed(1);
+        document.getElementById('destYaw').textContent   = d.destYaw.toFixed(1);
         altBuf.push(d.alt);
         if (altBuf.length > MAX_PTS) altBuf.shift();
         drawChart();

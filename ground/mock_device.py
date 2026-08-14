@@ -1,8 +1,10 @@
 """
 XIAO ESP32S3 実機なしで receiver.py を動作確認するためのモック。
-127.0.0.1 上で GET /data に対し、SensorData を模した33バイトフレームを返し続ける。
+127.0.0.1 上で GET /data に対し、SpiFrameToXiao2 を模した37バイトフレームを返し続ける。
 GET /motor?left=N&right=M も受け付け、lib/Radio/Radio.h と同じ1秒フェイルセイフで
-motor_output_left/right に折り返す（GUIのスライダーの動作確認用）。
+pid_output（left側の値）に折り返す（GUIのスライダーの動作確認用）。
+GET /goal?lat=..&lon=.. も受け付けるが、モックなので保持はせず200を返すだけ
+（receiver.py の GoalSender が無限リトライし続けないようにするため）。
 
 使い方:
     python mock_device.py
@@ -16,8 +18,8 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-# ground/receiver.py, lib/Radio/Radio.h と同じレイアウト・フォーマット文字列
-FRAME_FMT = "<IffffffBhh"
+# ground/receiver.py, include/spi_protocol.h (SpiFrameToXiao2) と同じレイアウト・フォーマット文字列
+FRAME_FMT = "<IffffffBff"
 FRAME_SIZE = struct.calcsize(FRAME_FMT)
 
 # lib/Radio/Radio.h の MOTOR_COMMAND_TIMEOUT_MS と同じ
@@ -47,10 +49,12 @@ def current_frame() -> bytes:
     yaw = (t * 36.0) % 360.0
     lat = 35.681236 + 0.0002 * math.sin(t * 0.2)
     lon = 139.767125 + 0.0002 * math.cos(t * 0.2)
-    state = int(t) // 10 % 6
-    motor_l, motor_r = current_motor_output()
+    state = int(t) // 10 % 7
+    motor_l, _motor_r = current_motor_output()
+    pid_output = float(motor_l)
+    destination_yaw = (t * 10.0) % 360.0 - 180.0
     return struct.pack(FRAME_FMT, timestamp_ms, alt, roll, pitch, yaw, lat, lon, state,
-                        motor_l, motor_r)
+                        pid_output, destination_yaw)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -82,6 +86,20 @@ class Handler(BaseHTTPRequestHandler):
             _motor_command_right = right
             _motor_command_at = time.monotonic()
             print(f"[mock_device] motor command left={left} right={right}")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"ok")
+            return
+
+        if parsed.path == "/goal":
+            # lib/Radio/Radio.cppの/goalと同じく受け取って200を返すだけ（モックなので保持はしない）
+            qs = parse_qs(parsed.query)
+            if "lat" not in qs or "lon" not in qs:
+                self.send_response(400)
+                self.end_headers()
+                return
+            print(f"[mock_device] goal lat={qs['lat'][0]} lon={qs['lon'][0]}")
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()

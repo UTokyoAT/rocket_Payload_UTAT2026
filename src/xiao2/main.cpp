@@ -1,56 +1,79 @@
 #include <Arduino.h>
 #include <Actuator.h>
-#include <PID.h>
+#include <Radio.h>
 #include "spi_protocol.h"
 #include <SpiLinkSlave.h>
 
+static const char* AP_SSID = "CanSat-AP";
+static const char* AP_PASS = "cansat2026";
+
 static SpiLinkSlave spiLink;
 static Actuator actuator;
+static Radio radio;
 
-// TODO: ゲインは実機調整が必要
-static PID headingPid(2.0f, 0.0f, 0.5f, -255.0f, 255.0f);
+// XIAO1から最後に受信したフレーム。新しいフレームが届かない間もこれを使い続ける
+// （モータ駆動・WiFiテレメトリの両方がこれを参照する）。
+static SpiFrameToXiao2 lastFrame{};
 
-// GPS方位（目標地点への方位）とXIAO1から受け取ったyaw（コンパス方位）の誤差をPIDで
-// 補正し、左右モータの差動出力に変換する（tests/test_navigationと同じ考え方）。
-// TODO: 現状は仮実装。目標座標の与え方・bearing計算・車体キネマティクスを詰める。
-static void computeAutonomousMotor(const SpiFrameToXiao2& in, int16_t& outLeft, int16_t& outRight) {
-    float headingError = 0.0f;  // TODO: 目標方位 - in.yaw を -180〜180 に正規化して算出
-    const float dt = 0.02f;     // 50Hz想定
-    float turn = headingPid.update(headingError, dt);
+// XIAO1からSPIフレームを最後に受信した時刻。SPI_LINK_TIMEOUT_MS以上更新が無ければ
+// XIAO1側の異常（クラッシュ・配線断等）とみなしフェイルセイフでモータを強制停止する。
+// 手動操作（Radio）より優先する（XIAO1が生きている前提でのみ機体を動かしてよいため）。
+static uint32_t lastSpiFrameMs = 0;
+static const uint32_t SPI_LINK_TIMEOUT_MS = 5000;
 
-    const int16_t base = 150;   // TODO: ミッションステートに応じて前進速度を調整
-    outLeft  = constrain(static_cast<int>(base - turn), -255, 255);
-    outRight = constrain(static_cast<int>(base + turn), -255, 255);
+// TODO: ミッションステートに応じて前進速度を調整
+// GPS/地磁気トラブル対応のtest_dead_reckoning（推測航法テスト）が直進フェーズを
+// 「最大出力」で行う前提のため255（最大）にしてある。本番のGPS誘導NAVIGATEでも
+// このBASE_SPEEDをそのまま使うため、誘導精度に問題が出るようなら要調整。
+static const int16_t BASE_SPEED = 255;
+
+// XIAO1が計算した誘導PID出力（旋回量）をbase±turnの左右差動出力に変換する。
+static void computeAutonomousMotor(float pidOutput, int16_t& outLeft, int16_t& outRight) {
+    outLeft  = constrain(static_cast<int>(BASE_SPEED - pidOutput), -255, 255);
+    outRight = constrain(static_cast<int>(BASE_SPEED + pidOutput), -255, 255);
 }
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("XIAO2 (motor PID / guidance) booting...");
+    Serial.println("XIAO2 (motor drive / WiFi telemetry) booting...");
 
     actuator.begin();
     spiLink.begin();
+    radio.begin(AP_SSID, AP_PASS);
 }
 
 void loop() {
-    SpiFrameToXiao2 in{};
-    if (spiLink.poll(in)) {
-        int16_t left, right;
-
-        if (in.manual_override) {
-            left  = in.manual_motor_left;
-            right = in.manual_motor_right;
-        } else {
-            computeAutonomousMotor(in, left, right);
-        }
-
-        actuator.setMotorLeft(left);
-        actuator.setMotorRight(right);
-
+    if (spiLink.poll(lastFrame)) {
         SpiFrameFromXiao2 out{};
-        out.motor_output_left  = left;
-        out.motor_output_right = right;
+        out.goal_valid = radio.hasGoal() ? 1 : 0;
+        out.goal_lat   = radio.getGoalLat();
+        out.goal_lon   = radio.getGoalLon();
         spiLink.setResponse(out);
+        lastSpiFrameMs = millis();
     }
 
-    // TODO: XIAO1からの通信が一定時間途絶えたらフェイルセイフでモータ停止する
+    // 自律PID走行はNAVIGATE状態のときだけ有効にする（発射・分離・展開の最中に
+    // pid_outputの値でモータが勝手に動き出さないようにする安全ゲート）。
+    // 地上局からの手動操作コマンドはミッションステートに関わらず常に優先する。
+    MissionState missionState = static_cast<MissionState>(lastFrame.mission_state);
+
+    int16_t left, right;
+    if (millis() - lastSpiFrameMs > SPI_LINK_TIMEOUT_MS) {
+        left  = 0;
+        right = 0;
+    } else if (radio.hasRecentMotorCommand()) {
+        left  = radio.getMotorCommandLeft();
+        right = radio.getMotorCommandRight();
+    } else if (missionState == MissionState::NAVIGATE) {
+        computeAutonomousMotor(lastFrame.pid_output, left, right);
+    } else {
+        left  = 0;
+        right = 0;
+    }
+
+    actuator.setMotorLeft(left);
+    actuator.setMotorRight(right);
+
+    radio.setData(lastFrame);
+    radio.poll();
 }

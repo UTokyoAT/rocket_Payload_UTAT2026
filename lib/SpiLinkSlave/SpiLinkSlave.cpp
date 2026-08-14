@@ -11,8 +11,10 @@ SpiLinkSlave::~SpiLinkSlave() {
 void SpiLinkSlave::begin() {
     _slave->setDataMode(SPI_MODE0);
     _slave->setQueueSize(1);
-    _slave->begin(FSPI, SpiPins::SCK, SpiPins::MISO, SpiPins::MOSI, SpiPins::CS);
+    _slave->begin(FSPI, SpiPins::SCK, SpiPins::MISO, SpiPins::MOSI, SpiPins::CS_SLAVE);
     _slave->queue(_txBuf, _rxBuf, SPI_FRAME_SIZE);
+    _slave->trigger();  // queue()だけではハードウェアにトランザクションが積まれず、
+                         // poll()が永久にfalseを返し続ける（trigger()が実際の受信開始トリガ）
 }
 
 bool SpiLinkSlave::poll(SpiFrameToXiao2& out) {
@@ -21,6 +23,7 @@ bool SpiLinkSlave::poll(SpiFrameToXiao2& out) {
     }
     memcpy(&out, _rxBuf, sizeof(out));
     _slave->queue(_txBuf, _rxBuf, SPI_FRAME_SIZE);  // 次のトランザクションを予約
+    _slave->trigger();
     return true;
 }
 

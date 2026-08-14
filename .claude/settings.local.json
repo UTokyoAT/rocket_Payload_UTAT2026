@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -f \"src/main.cpp\" \"src/tasks/task_sensor.h\" \"src/tasks/task_gps.h\" \"src/tasks/task_wifi.h\")",
+      "Bash(rmdir \"src/tasks\")"
+    ]
+  }
+}

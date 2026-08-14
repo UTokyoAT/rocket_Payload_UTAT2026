@@ -17,6 +17,7 @@ double GPS::getLat()      { return _gps.location.lat(); }
 double GPS::getLon()      { return _gps.location.lng(); }
 float  GPS::getAltitude() { return (float)_gps.altitude.meters(); }
 bool   GPS::isValid()     { return _gps.location.isValid(); }
+bool   GPS::locationUpdated() { return _gps.location.isUpdated(); }
 
 float GPS::bearingTo(double lat, double lon) {
     return (float)TinyGPSPlus::courseTo(getLat(), getLon(), lat, lon);
@@ -25,6 +26,10 @@ float GPS::bearingTo(double lat, double lon) {
 float GPS::distanceTo(double lat, double lon) {
     return (float)TinyGPSPlus::distanceBetween(getLat(), getLon(), lat, lon);
 }
+
+float GPS::getCourse()   { return (float)_gps.course.deg(); }
+bool  GPS::isCourseValid() { return _gps.course.isValid(); }
+float GPS::getSpeedMps() { return (float)_gps.speed.mps(); }
 
 uint32_t GPS::charsProcessed()      { return _gps.charsProcessed(); }
 uint32_t GPS::failedChecksumCount() { return _gps.failedChecksum(); }

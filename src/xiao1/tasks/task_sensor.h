@@ -23,6 +23,6 @@ void taskSensor(void* arg) {
             xSemaphoreGive(s->mutex);
         }
 
-        vTaskDelayUntil(&last, pdMS_TO_TICKS(20));  // 50Hz
+        vTaskDelayUntil(&last, pdMS_TO_TICKS(10));  // 100Hz（BMM350のODRに合わせる）
     }
 }

@@ -16,31 +16,42 @@
 
 ## ディレクトリ構造
 
+XIAO ESP32S3を2枚（XIAO1・XIAO2）使い、SPIで接続する構成。詳細は [architecture.md](docs/architecture.md) を参照。
+
 ```
 rocket_Payload_UTAT2026/
 │
-├── platformio.ini           # ビルド・ボード・ライブラリ設定
+├── platformio.ini           # ビルド・ボード・ライブラリ設定（env:xiao1 / env:xiao2 他）
 │
 ├── include/
-│   └── shared.h             # タスク間共有データ（SensorData・MissionState）
+│   ├── shared.h             # XIAO1タスク間共有データ（SensorData・MissionState）
+│   └── spi_protocol.h       # XIAO1⇔XIAO2間のSPIフレーム定義（SpiFrameToXiao2 他）
 │
 ├── src/
-│   ├── main.cpp             # 起動・ハードウェア初期化・タスク生成
-│   └── tasks/
-│       ├── task_sensor.h    # センサー読み取りタスク（50Hz, Core1）
-│       ├── task_gps.h       # GPS受信・パースタスク（Core0）
-│       ├── task_wifi.h      # HTTP GET配信タスク（PULL方式, 20Hz, Core0）
-│       └── task_statemachine.h  # ステート遷移タスク（10Hz, Core1）
+│   ├── xiao1/                       # センサー・GPS・誘導PID計算（SPIマスター）
+│   │   ├── main.cpp                 # 起動・タスク生成
+│   │   └── tasks/
+│   │       ├── task_sensor.h        # IMU・気圧・地磁気読み取り＋姿勢フィルタ（100Hz, Core1）
+│   │       ├── task_gps.h           # GPS受信・パース（Core0）
+│   │       ├── task_navigation.h    # 誘導PID計算（100Hz, Core1）
+│   │       ├── task_mission.h       # ミッションステート遷移（20Hz, Core1）
+│   │       └── task_spi_link.h      # XIAO2への送信（100Hz, Core1）
+│   └── xiao2/                       # モータ駆動・WiFiテレメトリ中継（SPIスレーブ）
+│       └── main.cpp
 │
 ├── lib/
-│   ├── Sensor/              # BMP388・ICM-42688・QMC5883 ドライバ＋姿勢フィルタ
-│   ├── GPS/                 # TinyGPSPlus ラッパー
-│   ├── Radio/               # WiFi SoftAP・HTTP GETでバイナリフレーム配信（PULL方式）
-│   ├── Actuator/            # モーター・パラシュート・ブザー・LED制御
-│   └── StateMachine/        # ミッションステート遷移ロジック
+│   ├── Sensor/              # BMP280・MPU6050・BMM350 ドライバ＋姿勢フィルタ  ─ XIAO1
+│   ├── GPS/                 # TinyGPSPlus ラッパー                          ─ XIAO1
+│   ├── PID/                 # 汎用PIDコントローラ                          ─ XIAO1
+│   ├── SpiLinkMaster/       # XIAO2へのSPI送信（マスター側）                ─ XIAO1
+│   ├── SpiLinkSlave/        # XIAO1からのSPI受信（スレーブ側）              ─ XIAO2
+│   ├── Radio/               # WiFi SoftAP・HTTP GETでバイナリフレーム配信（PULL方式） ─ XIAO2
+│   ├── Actuator/            # モーター制御（TB6612FNG）                     ─ XIAO2
+│   └── Deployer/            # ロケット分離・パラシュート分離（ニクロム線）・LED ─ XIAO1
 │
 ├── ground/
 │   ├── receiver.py          # HTTP GETポーリング受信＋CSVロギング＋Tkinter GUI
+│   ├── mock_device.py       # 実機なしでreceiver.pyを確認するためのモック
 │   ├── requirements.txt
 │   └── logs/                # 保存されたCSVログ（.gitignore推奨）
 │

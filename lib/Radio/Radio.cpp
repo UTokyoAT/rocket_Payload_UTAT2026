@@ -11,6 +11,10 @@ static int16_t  _motorCommandLeft  = 0;
 static int16_t  _motorCommandRight = 0;
 static uint32_t _motorCommandAt    = 0;
 
+static float _goalLat   = 0.0f;
+static float _goalLon   = 0.0f;
+static bool  _goalValid = false;
+
 void Radio::begin(const char* ssid, const char* password) {
     WiFi.softAP(ssid, password);
     Serial.printf("[Radio] SoftAP: %s  IP: %s\n",
@@ -38,6 +42,20 @@ void Radio::begin(const char* ssid, const char* password) {
         _server.send(200, "text/plain", "ok");
     });
 
+    // 地上局からの目的地座標設定（GET /motorと同じPULL方向の運用）。
+    // 一度設定したらhasRecentMotorCommand()のようなタイムアウトはかけない
+    // （目的地は明示的に変更されるまで保持し続けるべきで、通信断で失われては困るため）。
+    _server.on("/goal", HTTP_GET, []() {
+        if (!_server.hasArg("lat") || !_server.hasArg("lon")) {
+            _server.send(400, "text/plain", "missing lat/lon");
+            return;
+        }
+        _goalLat   = _server.arg("lat").toFloat();
+        _goalLon   = _server.arg("lon").toFloat();
+        _goalValid = true;
+        _server.send(200, "text/plain", "ok");
+    });
+
     // ブラウザで 192.168.4.1 を開くとダッシュボードが表示される（/data をfetchポーリング）
     _server.on("/", HTTP_GET, []() {
         _server.send_P(200, "text/html", DASHBOARD_HTML);
@@ -46,29 +64,10 @@ void Radio::begin(const char* ssid, const char* password) {
     _server.begin();
 }
 
-void Radio::setData(const SensorData& d, MissionState state) {
-    size_t off = 0;
-    auto put = [&](const void* src, size_t n) {
-        memcpy(_frame + off, src, n);
-        off += n;
-    };
-
-    put(&d.timestamp_ms, sizeof(d.timestamp_ms));
-    put(&d.alt,          sizeof(d.alt));
-    put(&d.roll,         sizeof(d.roll));
-    put(&d.pitch,        sizeof(d.pitch));
-    put(&d.yaw,           sizeof(d.yaw));
-
-    float lat = static_cast<float>(d.lat);
-    float lon = static_cast<float>(d.lon);
-    put(&lat, sizeof(lat));
-    put(&lon, sizeof(lon));
-
-    uint8_t stateByte = static_cast<uint8_t>(state);
-    put(&stateByte, sizeof(stateByte));
-
-    put(&d.motorOutputLeft,  sizeof(d.motorOutputLeft));
-    put(&d.motorOutputRight, sizeof(d.motorOutputRight));
+void Radio::setData(const SpiFrameToXiao2& frame) {
+    // SpiFrameToXiao2はpacked・パディング無しでワイヤーフレームと同一レイアウトなので
+    // フィールドごとの詰め替えは不要
+    memcpy(_frame, &frame, sizeof(frame));
 }
 
 int16_t Radio::getMotorCommandLeft() {
@@ -80,6 +79,14 @@ int16_t Radio::getMotorCommandRight() {
     if (millis() - _motorCommandAt > MOTOR_COMMAND_TIMEOUT_MS) return 0;
     return _motorCommandRight;
 }
+
+bool Radio::hasRecentMotorCommand() {
+    return (millis() - _motorCommandAt) <= MOTOR_COMMAND_TIMEOUT_MS;
+}
+
+float Radio::getGoalLat() { return _goalLat; }
+float Radio::getGoalLon() { return _goalLon; }
+bool  Radio::hasGoal()    { return _goalValid; }
 
 void Radio::poll() { _server.handleClient(); }
 

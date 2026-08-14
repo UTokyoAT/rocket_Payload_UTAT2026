@@ -1,17 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <freertos/semphr.h>
-
-// FALLINGという名前はArduino.hの割り込みモード用マクロ(#define FALLING 0x02)と
-// 衝突する（enum classでもマクロ展開はスコープを無視して行われるため）。DESCENDINGを使う。
-enum class MissionState {
-    STANDBY,
-    ASCENDING,
-    DESCENDING,
-    SEPARATING,
-    RUNNING,
-    GOAL
-};
+#include "spi_protocol.h"  // MissionState enum
 
 struct SensorData {
     float alt   = 0.0f;
@@ -21,16 +11,22 @@ struct SensorData {
     double lat  = 0.0;
     double lon  = 0.0;
     uint32_t timestamp_ms = 0;
-    int16_t motorOutputLeft  = 0;  // Actuator::setMotorLeft()相当値（-255〜255）
-    int16_t motorOutputRight = 0;  // Actuator::setMotorRight()相当値（-255〜255）
+    bool gpsValid = false;         // taskGPSが書き込む。fix取得前はtaskNavigationがPID出力を0に固定する
+    int gpsSatellites = 0;         // taskGPSが書き込む捕捉中の衛星数。taskMissionのSETTING判定用
+    uint32_t gpsFixSeq = 0;        // taskGPSが新規fixのたびインクリメント。taskMissionのNAVIGATE停止判定用
+    float pidOutput      = 0.0f;  // taskNavigationが計算する誘導PIDの旋回量。taskSpiLinkがXIAO2へ転送する
+    float destinationYaw = 0.0f;  // taskNavigationが計算する目的地への方位角 [deg]（磁北基準）
 };
 
 struct Shared {
     SemaphoreHandle_t mutex;
     SensorData latest;
-    MissionState state = MissionState::STANDBY;
+    MissionState state = MissionState::SETTING;
 
-    // 地上局からのWiFi手動操作コマンド（taskWifiが書き込み、taskSpiLinkがXIAO2へ転送する）
-    int16_t manualMotorLeft  = 0;
-    int16_t manualMotorRight = 0;
+    // 誘導PIDの目的地。SETTING完了時にtaskMissionがGPS取得座標（＝打ち上げ地点）で
+    // 上書きする（return-to-launch方式）。この既定値はそれまでの間だけ使われる仮値。
+    // 地上局がXIAO2へGET /goal?lat=..&lon=..を送ると、taskSpiLinkがSPI応答経由で
+    // 受け取り、SETTING完了後であってもいつでも優先的に上書きする（taskNavigation.h参照）。
+    double goalLat = 35.681236;
+    double goalLon = 139.767125;
 };

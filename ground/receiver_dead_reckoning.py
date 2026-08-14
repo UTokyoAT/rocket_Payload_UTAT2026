@@ -1,28 +1,26 @@
 """
-CanSat 地上局レシーバー（Windowsネイティブ / Tkinter）
+CanSat 地上局レシーバー（推測航法テスト専用 / Windowsネイティブ / Tkinter）
+
 XIAO ESP32S3 の SoftAP (CanSat-AP) に接続した状態で実行する。
 
-PULL方式: このスクリプトが機体の GET /data を定期的にポーリングしにいく。
-（機体→PCへのPUSH/POSTはPC側ファイアウォールに阻まれ信頼できないため使わない）
+tests/test_dead_reckoning・test_dead_reckoning_post_detach 専用の受信スクリプト。
+これらのテストファームウェアはGPSを使わないため、SpiFrameToXiao2のlat/lonフィールドを
+本来のGPS度数ではなく「着地位置（原点）からのx/y距離[m]」として、yawフィールドを
+真北基準ではなく「原点リセット時の機体の向きを0度とする相対ヘディング[deg]」として送ってくる
+（詳細は tests/test_dead_reckoning/main.cpp の「走行軌跡の推定」コメントを参照）。
 
-受信データを CSV に保存しつつ、ターミナルへのライブ表示と
-Tkinter ウィンドウ（高度チャート・現在地/向き/目的地マップ・左右モーター出力・
-目的地までの距離と方位・左右独立の手動モーター制御スライダー）を表示する。
+本番用の receiver.py はGPS度数（緯度経度）を前提に地図を描画するため、このテストの
+データをそのまま渡すと壊れた地図になる。本スクリプトはその変換をせず、受信した
+lat/lonをそのままメートル単位のローカルXY座標として描画する版。
 
-手動モーター制御は「有効にする」チェックを入れると左右スライダーの値を
-GET /motor?left=N&right=M として機体へ送り続ける（250ms間隔）。機体側は1秒間
-コマンドを受信しないと自動的に出力を0にするフェイルセイフを持つ。
-
---dest-lat/--dest-lonを指定すると、地図表示・距離方位計算に使うだけでなく
-GET /goal?lat=..&lon=..として機体側（XIAO1の誘導PID）の実際の目的地も同じ
-座標に設定する（機体はSPI経由でXIAO1へ転送し、明示的に上書きされるまで保持する）。
-これにより地上局の表示上の目的地と機体が実際に向かう先が食い違わなくなる。
+本番のGPS目的地（--dest-lat/--dest-lon, GET /goal）機能はこのテストでは意味がないため
+持たない。CSVログ・ターミナル表示・地図表示・手動モーター制御（安全停止用）は
+receiver.pyと同じ構成。
 
 使い方:
     pip install -r requirements.txt   # GUIのマップ描画に matplotlib を使用
-    python receiver.py                                    # GUIあり（目的地なし）
-    python receiver.py --dest-lat 35.6820 --dest-lon 139.7670   # 目的地を指定（機体にも反映）
-    python receiver.py --headless     # ターミナル＋CSVのみ（Tkinter/matplotlibなし環境向け）
+    python receiver_dead_reckoning.py                  # GUIあり
+    python receiver_dead_reckoning.py --headless        # ターミナル＋CSVのみ
 """
 
 from __future__ import annotations
@@ -41,24 +39,13 @@ from datetime import datetime
 from pathlib import Path
 
 # ─── バイナリフレームレイアウト（機体側 include/spi_protocol.h の SpiFrameToXiao2 と共有する契約）───
-# XIAO1がSPIでXIAO2へ送るフレームを、XIAO2がそのままWiFiで中継している。
-# 37バイト、リトルエンディアン。
-#   offset  size  type     field            note
-#     0      4    uint32   timestamp_ms
-#     4      4    float32  alt              [m]
-#     8      4    float32  roll             [deg]
-#    12      4    float32  pitch            [deg]
-#    16      4    float32  yaw              [deg]
-#    20      4    float32  lat              double→float32に縮小
-#    24      4    float32  lon              double→float32に縮小
-#    28      1    uint8    mission_state
-#    29      4    float32  pid_output       誘導PIDの旋回量（-255〜255）
-#    33      4    float32  destination_yaw  目的地への方位角 [deg]（磁北基準）
+# 37バイト、リトルエンディアン。フィールド構成は本番と同じだが、このテストでは
+# lat/lonが「原点からのx/y距離[m]」、yawが「相対ヘディング[deg]」を表す（GPS/地磁気非使用）。
 FRAME_FMT = "<IffffffBff"
 FRAME_SIZE = struct.calcsize(FRAME_FMT)  # 37
 
-Frame = namedtuple("Frame", ["t", "alt", "roll", "pitch", "yaw", "lat", "lon", "state",
-                              "pid_output", "destination_yaw"])
+Frame = namedtuple("Frame", ["t", "alt", "roll", "pitch", "heading", "x", "y", "state",
+                              "pid_output", "phase_code"])
 
 STATE_NAMES = {
     0: "SETTING",
@@ -70,63 +57,60 @@ STATE_NAMES = {
     6: "ABORTED",
 }
 
-CSV_HEADER = ["timestamp_ms", "alt_m", "roll_deg", "pitch_deg", "yaw_deg",
-              "lat", "lon", "state", "pid_output", "destination_yaw_deg",
-              "dist_to_dest_m", "bearing_to_dest_deg"]
+# mission_state（STATE_NAMES）はXIAO2の安全ゲート用でDRIVE_STRAIGHT/DRIVE_CIRCLEどちらも
+# NAVIGATE固定になり区別できないため、機体側はdestination_yawフィールドにこのテスト独自の
+# 詳細フェーズ番号を載せて送ってくる（tests/test_dead_reckoning・test_dead_reckoning_post_detach
+# 両方のmain.cppでこの番号に揃えてある）。
+PHASE_NAMES = {
+    0: "LAUNCH",
+    1: "DETACH",
+    2: "UNFOLD",           # post_detach版ではWAIT_ATTITUDE_SETTLE
+    3: "DRIVE_STRAIGHT",
+    4: "DRIVE_CIRCLE",
+    5: "GOAL",              # post_detach版ではDONE
+    6: "ABORTED",
+}
+
+CSV_HEADER = ["timestamp_ms", "alt_m", "roll_deg", "pitch_deg", "heading_deg",
+              "x_m", "y_m", "state", "phase", "pid_output"]
+
+# tests/test_dead_reckoning/main.cppのLAUNCH_ARM_DELAY_MS（起動からこの時間が経つまで
+# 高度判定を開始しない）と同じ値。LAUNCH中の残り時間表示にだけ使う
+# （post_detach版はLAUNCH状態自体が無いので単に表示されない）。
+LAUNCH_ARM_DELAY_MS = 10 * 60 * 1000
 
 LOG_DIR = Path(__file__).parent / "logs"
 
-EARTH_RADIUS_M = 6371000.0
+
+def format_elapsed(ms: int) -> str:
+    """起動からの経過時間[ms]を H:MM:SS 形式にする。"""
+    total_s = ms // 1000
+    h, rem = divmod(total_s, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}"
 
 
 def make_log_path() -> Path:
     LOG_DIR.mkdir(exist_ok=True)
-    return LOG_DIR / f"log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    return LOG_DIR / f"deadreckoning_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
 
-def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlmb = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
-    return 2 * EARTH_RADIUS_M * math.asin(math.sqrt(a))
-
-
-def bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """lat1,lon1 から lat2,lon2 への初期方位角 [deg]（0=北、時計回り）"""
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dlmb = math.radians(lon2 - lon1)
-    x = math.sin(dlmb) * math.cos(p2)
-    y = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dlmb)
-    return (math.degrees(math.atan2(x, y)) + 360) % 360
-
-
-def local_xy_m(lat: float, lon: float, ref_lat: float, ref_lon: float) -> tuple[float, float]:
-    """ref(lat,lon)を原点とした東西(x)・南北(y)方向の平面近似座標 [m]。短距離用の簡易投影。"""
-    x = math.radians(lon - ref_lon) * EARTH_RADIUS_M * math.cos(math.radians(ref_lat))
-    y = math.radians(lat - ref_lat) * EARTH_RADIUS_M
-    return x, y
-
-
-def fmt(frame: Frame, dist_m: float | None, brg: float | None) -> str:
+def fmt(frame: Frame) -> str:
     state_name = STATE_NAMES.get(frame.state, str(frame.state))
-    line = (
-        f"\r[{state_name:<12}] "
+    phase_code = int(round(frame.phase_code))
+    phase_name = PHASE_NAMES.get(phase_code, str(phase_code))
+    return (
+        f"\r[{state_name:<9}/{phase_name:<14}] "
+        f"T+{format_elapsed(frame.t):<8} "
         f"alt={frame.alt:7.2f}m  "
-        f"R={frame.roll:6.1f}°  P={frame.pitch:6.1f}°  Y={frame.yaw:6.1f}°  "
-        f"GPS={frame.lat:.5f},{frame.lon:.5f}  "
-        f"PID={frame.pid_output:6.1f}  DESTYAW={frame.destination_yaw:6.1f}°"
+        f"R={frame.roll:6.1f}°  P={frame.pitch:6.1f}°  HDG={frame.heading:6.1f}°  "
+        f"pos=({frame.x:6.2f},{frame.y:6.2f})m  "
+        f"PID={frame.pid_output:6.1f}"
     )
-    if dist_m is not None:
-        line += f"  DIST={dist_m:7.1f}m BRG={brg:5.1f}°"
-    return line
 
 
 class Poller(threading.Thread):
-    """バックグラウンドスレッドで /data を定期的にGETし、結果をqueueへ流す。
-
-    GUIのメインスレッドをネットワーク待ちでブロックしないためにスレッド分離している。
-    """
+    """バックグラウンドスレッドで /data を定期的にGETし、結果をqueueへ流す。"""
 
     def __init__(self, url: str, interval_s: float, timeout_s: float,
                  out_queue: "queue.Queue", stop_event: threading.Event):
@@ -152,49 +136,16 @@ class Poller(threading.Thread):
 
 
 def _send_motor_command(url: str, left: int, right: int, timeout_s: float) -> None:
-    """/motor へのベストエフォート送信（失敗しても黙って諦める。呼び出し側でリトライする前提）。"""
+    """/motor へのベストエフォート送信（失敗しても黙って諦める）。安全停止ボタン用。"""
     try:
         urllib.request.urlopen(f"{url}?left={left}&right={right}", timeout=timeout_s)
     except (urllib.error.URLError, OSError, TimeoutError):
         pass
 
 
-class GoalSender(threading.Thread):
-    """起動時に指定された目的地を /goal へ送るバックグラウンドスレッド。
-
-    機体側 (Radio::hasGoal()) はモーターコマンドと異なりタイムアウトで無効化しないため
-    継続送信は不要だが、起動直後はまだWiFi接続やHTTPサーバーが立ち上がりきっていない
-    ことがあるため、成功する（HTTP 200が返る）まで一定間隔でリトライする。
-    """
-
-    def __init__(self, url: str, lat: float, lon: float, retry_interval_s: float,
-                 timeout_s: float, stop_event: threading.Event):
-        super().__init__(daemon=True)
-        self.url = url
-        self.lat = lat
-        self.lon = lon
-        self.retry_interval_s = retry_interval_s
-        self.timeout_s = timeout_s
-        self.stop_event = stop_event
-
-    def run(self) -> None:
-        while not self.stop_event.is_set():
-            try:
-                urllib.request.urlopen(
-                    f"{self.url}?lat={self.lat}&lon={self.lon}", timeout=self.timeout_s
-                )
-                return  # 機体側は明示的に上書きされるまで保持するので、成功したら送り続けなくてよい
-            except (urllib.error.URLError, OSError, TimeoutError):
-                pass
-            self.stop_event.wait(self.retry_interval_s)
-
-
 class MotorCommander(threading.Thread):
-    """有効化されている間、現在の左右値を /motor へ定期送信し続けるバックグラウンドスレッド。
-
-    機体側 (Radio::getMotorCommandLeft/Right()) は一定時間コマンドを受信しないと
-    自動的に出力を0にするフェイルセイフを持つため、ここでは「有効」な間は常に
-    再送し続ける（スライダーの値が変わっていなくても、接続維持のために送り続ける必要がある）。
+    """有効化されている間、現在の左右値を /motor へ定期送信し続けるバックグラウンドスレッド
+    （機体はNAVIGATE中は自律走行するが、緊急停止用に手動オーバーライドできるようにしておく）。
     """
 
     def __init__(self, url: str, send_interval_s: float, timeout_s: float,
@@ -225,16 +176,16 @@ class Recorder:
         self._writer.writerow(CSV_HEADER)
         print(f"Logging to {self.log_path}\n")
 
-    def on_data(self, frame: Frame, dist_m: float | None, brg: float | None) -> None:
+    def on_data(self, frame: Frame) -> None:
+        phase_code = int(round(frame.phase_code))
         self._writer.writerow([
-            frame.t, frame.alt, frame.roll, frame.pitch, frame.yaw,
-            frame.lat, frame.lon, STATE_NAMES.get(frame.state, frame.state),
-            frame.pid_output, frame.destination_yaw,
-            "" if dist_m is None else f"{dist_m:.2f}",
-            "" if brg is None else f"{brg:.1f}",
+            frame.t, frame.alt, frame.roll, frame.pitch, frame.heading,
+            frame.x, frame.y, STATE_NAMES.get(frame.state, frame.state),
+            PHASE_NAMES.get(phase_code, phase_code),
+            frame.pid_output,
         ])
         self._f.flush()
-        print(fmt(frame, dist_m, brg), end="", flush=True)
+        print(fmt(frame), end="", flush=True)
 
     def on_error(self, message: str) -> None:
         print(f"\rGET failed: {message}. retrying...", end="", flush=True)
@@ -243,41 +194,14 @@ class Recorder:
         self._f.close()
 
 
-class DestinationTracker:
-    """目的地（任意）までの距離・方位を計算し、地図描画用のローカル座標原点を管理する。"""
-
-    def __init__(self, dest_lat: float | None, dest_lon: float | None):
-        self.dest = (dest_lat, dest_lon) if dest_lat is not None else None
-        # 目的地があればそこを原点に、なければ最初に受信した位置を原点にする
-        self.ref = self.dest
-
-    def update(self, frame: Frame) -> tuple[float | None, float | None]:
-        if self.ref is None:
-            self.ref = (frame.lat, frame.lon)
-        dist = brg = None
-        if self.dest is not None:
-            dist = haversine_m(frame.lat, frame.lon, *self.dest)
-            brg = bearing_deg(frame.lat, frame.lon, *self.dest)
-        return dist, brg
-
-    def current_xy(self, frame: Frame) -> tuple[float, float]:
-        return local_xy_m(frame.lat, frame.lon, *self.ref)
-
-    def dest_xy(self) -> tuple[float, float] | None:
-        if self.dest is None or self.ref is None:
-            return None
-        return local_xy_m(self.dest[0], self.dest[1], *self.ref)
-
-
-def run_headless(poller: Poller, recorder: Recorder, dest: DestinationTracker,
+def run_headless(poller: Poller, recorder: Recorder,
                   out_queue: "queue.Queue", stop_event: threading.Event) -> None:
     poller.start()
     try:
         while True:
             kind, payload = out_queue.get()
             if kind == "data":
-                dist, brg = dest.update(payload)
-                recorder.on_data(payload, dist, brg)
+                recorder.on_data(payload)
             else:
                 recorder.on_error(payload)
     except KeyboardInterrupt:
@@ -288,16 +212,22 @@ def run_headless(poller: Poller, recorder: Recorder, dest: DestinationTracker,
         recorder.close()
 
 
-def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
-            motor_cmd: MotorCommander,
+def run_gui(poller: Poller, recorder: Recorder, motor_cmd: MotorCommander,
             out_queue: "queue.Queue", stop_event: threading.Event) -> None:
     import tkinter as tk
+
+    import matplotlib
+    # matplotlibの既定フォント(DejaVu Sans)には日本語グリフが無く、軸ラベルの日本語部分が
+    # 豆腐（□）化するため、Windows標準の日本語フォントを明示指定する（Tkinter側のラベルは
+    # OSのフォントフォールバックで問題なく表示されるので、matplotlib側だけの対応でよい）。
+    matplotlib.rcParams["font.family"] = ["Yu Gothic", "Meiryo", "MS Gothic", "sans-serif"]
+    matplotlib.rcParams["axes.unicode_minus"] = False  # 上記フォントだとマイナス記号が文字化けすることがあるため
 
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
     MAX_PTS = 300
-    MAX_TRAIL = 300
+    MAX_TRAIL = 2000  # 直進10m+円1周ぶんを1本の軌跡で見たいので長めに持つ
     alt_buf: list[float] = []
     trail: list[tuple[float, float]] = []
 
@@ -309,19 +239,20 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
     LABEL_FONT = ("Consolas", 9)
 
     root = tk.Tk()
-    root.title("CanSat Monitor")
+    root.title("CanSat Dead-Reckoning Monitor")
     root.configure(bg=BG)
     root.geometry("1180x820")
     root.minsize(900, 640)
 
     status_var = tk.StringVar(value="● unreachable")
     state_var = tk.StringVar(value="--")
+    phase_var = tk.StringVar(value="--")
+    elapsed_var = tk.StringVar(value="--")
+    launch_arm_var = tk.StringVar(value="")
     alt_var = tk.StringVar(value="--")
-    rpy_var = tk.StringVar(value="--")
-    gps_var = tk.StringVar(value="--")
+    rph_var = tk.StringVar(value="--")
+    pos_var = tk.StringVar(value="--")
     pid_var = tk.StringVar(value="--")
-    dest_yaw_var = tk.StringVar(value="--")
-    dist_var = tk.StringVar(value="--" if dest.dest is None else "取得中...")
 
     root.columnconfigure(0, weight=0)
     root.columnconfigure(1, weight=1)
@@ -348,10 +279,14 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
         frame.pack(fill="x", padx=12, pady=4)
         return frame
 
-    card(left, "STATE", state_var)
+    card(left, "STATE（mission_state。安全ゲート用）", state_var, value_font=("Consolas", 14, "bold"))
+    card(left, "PHASE（テスト詳細フェーズ）", phase_var, value_font=("Consolas", 16, "bold"))
+    card(left, "起動からの経過時間 (T+)", elapsed_var, value_font=("Consolas", 16, "bold"))
+    tk.Label(left, textvariable=launch_arm_var, bg=BG, fg="#fc4",
+             font=LABEL_FONT, justify="left").pack(anchor="w", padx=12, pady=(0, 4))
     card(left, "ALTITUDE [m]", alt_var)
-    card(left, "ROLL / PITCH / YAW [deg]", rpy_var, value_font=("Consolas", 13))
-    card(left, "GPS (lat, lon)", gps_var, value_font=("Consolas", 13))
+    card(left, "ROLL / PITCH / HEADING [deg]", rph_var, value_font=("Consolas", 13))
+    card(left, "推測位置 (x, y) [m]", pos_var, value_font=("Consolas", 13))
 
     def make_motor_gauge(parent) -> tk.Canvas:
         gauge = tk.Canvas(parent, bg=BG, width=220, height=14, highlightthickness=0)
@@ -374,17 +309,11 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
     tk.Label(motor_card, textvariable=pid_var, bg=CARD_BG, fg=ACCENT,
               font=("Consolas", 14, "bold")).pack(anchor="w", padx=10)
     pid_gauge = make_motor_gauge(motor_card)
-    tk.Label(motor_card, text="DEST YAW（磁北基準）", bg=CARD_BG, fg=MUTED,
-             font=LABEL_FONT).pack(anchor="w", padx=10, pady=(6, 2))
-    tk.Label(motor_card, textvariable=dest_yaw_var, bg=CARD_BG, fg=ACCENT,
-              font=("Consolas", 14, "bold")).pack(anchor="w", padx=10)
     motor_card.pack(fill="x", padx=12, pady=4)
 
-    card(left, "目的地までの距離 / 方位", dist_var, value_font=("Consolas", 13))
-
-    # ─── 手動モーター制御（左右独立、画面右下に配置） ───
+    # ─── 手動モーター制御（緊急停止用。左右独立、画面右下に配置） ───
     manual_frame = tk.Frame(right, bg=CARD_BG)
-    tk.Label(manual_frame, text="手動モーター制御", bg=CARD_BG, fg=MUTED,
+    tk.Label(manual_frame, text="手動モーター制御（緊急停止用）", bg=CARD_BG, fg=MUTED,
              font=LABEL_FONT).pack(anchor="w", padx=10, pady=(8, 2))
 
     manual_enabled_var = tk.BooleanVar(value=False)
@@ -469,18 +398,21 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
         canvas.create_text(24, h - 8, text=f"{min_v:.1f}m", fill=ACCENT,
                             font=LABEL_FONT, anchor="w")
 
-    # ─── マップ（現在地・機体の向き・目的地・東西南北）───
+    # ─── マップ（推測位置の軌跡。原点=着地位置、機体の向きは相対ヘディング）───
     fig = Figure(figsize=(5, 5), dpi=100, facecolor=BG)
     ax = fig.add_subplot(111)
     map_canvas = FigureCanvasTkAgg(fig, master=right)
     map_canvas.get_tk_widget().grid(row=1, column=0, sticky="nsew", padx=12, pady=(6, 12))
 
     def draw_map(frame: Frame):
-        x, y = dest.current_xy(frame)
+        # 機体から送られてくる生のx_m/y_m・heading_degはそのままCSVに残す一方、
+        # マップ描画だけは前後が逆に見えるとの実機報告があったためY軸を反転して表示する
+        # （前進＝画面上方向になるようにするための表示専用の補正。ヘディング矢印も
+        # 同じ反転をかけないと矢印だけ軌跡と逆向きになるので、dyも合わせて反転する）。
+        x, y = frame.x, -frame.y
         trail.append((x, y))
         if len(trail) > MAX_TRAIL:
             trail.pop(0)
-        dxy = dest.dest_xy()
 
         ax.clear()
         ax.set_facecolor(BG)
@@ -489,11 +421,8 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
         ax.tick_params(colors=MUTED, labelsize=8)
         ax.grid(True, color=MUTED, alpha=0.15)
 
-        xs = [p[0] for p in trail]
-        ys = [p[1] for p in trail]
-        if dxy is not None:
-            xs.append(dxy[0])
-            ys.append(dxy[1])
+        xs = [p[0] for p in trail] + [0.0]
+        ys = [p[1] for p in trail] + [0.0]
         xmin, xmax = min(xs), max(xs)
         ymin, ymax = min(ys), max(ys)
         span = max(xmax - xmin, ymax - ymin, 10.0)
@@ -505,32 +434,22 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
 
         if len(trail) >= 2:
             ax.plot([p[0] for p in trail], [p[1] for p in trail], "-",
-                     color=ACCENT, alpha=0.4, lw=1.5)
+                     color=ACCENT, alpha=0.6, lw=1.5)
 
-        if dxy is not None:
-            ax.plot(dxy[0], dxy[1], marker="*", color="#f44", markersize=16, zorder=5)
-            ax.annotate("DEST", dxy, color="#f44", fontsize=8,
-                        xytext=(4, 4), textcoords="offset points")
+        # 原点＝着地位置
+        ax.plot(0.0, 0.0, marker="*", color="#f44", markersize=14, zorder=5)
+        ax.annotate("LANDING", (0.0, 0.0), color="#f44", fontsize=8,
+                    xytext=(4, 4), textcoords="offset points")
 
         ax.plot(x, y, marker="o", color=ACCENT, markersize=9, zorder=6)
         arrow_len = span * 0.15
-        yaw_rad = math.radians(frame.yaw)
-        dx, dy = arrow_len * math.sin(yaw_rad), arrow_len * math.cos(yaw_rad)
+        heading_rad = math.radians(frame.heading)
+        dx, dy = arrow_len * math.sin(heading_rad), -arrow_len * math.cos(heading_rad)
         ax.annotate("", xy=(x + dx, y + dy), xytext=(x, y),
                     arrowprops=dict(arrowstyle="-|>", color="#ff0", lw=2), zorder=7)
 
-        # 東西南北（Y=北, X=東の平面近似なので軸の上下左右がそのままN/S/E/W）
-        ax.text(0.5, 0.98, "N", transform=ax.transAxes, color=MUTED,
-                ha="center", va="top", fontsize=10)
-        ax.text(0.5, 0.02, "S", transform=ax.transAxes, color=MUTED,
-                ha="center", va="bottom", fontsize=10)
-        ax.text(0.98, 0.5, "E", transform=ax.transAxes, color=MUTED,
-                ha="right", va="center", fontsize=10)
-        ax.text(0.02, 0.5, "W", transform=ax.transAxes, color=MUTED,
-                ha="left", va="center", fontsize=10)
-
-        ax.set_xlabel("East [m]", color=MUTED, fontsize=8)
-        ax.set_ylabel("North [m]", color=MUTED, fontsize=8)
+        ax.set_xlabel("X [m]（IMU推測・ドリフトあり）", color=MUTED, fontsize=8)
+        ax.set_ylabel("Y [m]（IMU推測・ドリフトあり・表示用に符号反転）", color=MUTED, fontsize=8)
         map_canvas.draw_idle()
 
     def drain_queue():
@@ -538,19 +457,23 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
             while True:
                 kind, payload = out_queue.get_nowait()
                 if kind == "data":
-                    dist, brg = dest.update(payload)
-                    recorder.on_data(payload, dist, brg)
+                    recorder.on_data(payload)
 
                     status_var.set("● reachable")
                     state_var.set(STATE_NAMES.get(payload.state, str(payload.state)))
+                    phase_var.set(PHASE_NAMES.get(int(round(payload.phase_code)), str(payload.phase_code)))
+                    elapsed_var.set(f"T+{format_elapsed(payload.t)}")
+                    phase_code = int(round(payload.phase_code))
+                    if phase_code == 0 and payload.t < LAUNCH_ARM_DELAY_MS:
+                        remain_ms = LAUNCH_ARM_DELAY_MS - payload.t
+                        launch_arm_var.set(f"高度判定 開始まで あと {format_elapsed(remain_ms)}")
+                    else:
+                        launch_arm_var.set("")
                     alt_var.set(f"{payload.alt:.1f}")
-                    rpy_var.set(f"R:{payload.roll:6.1f}  P:{payload.pitch:6.1f}  Y:{payload.yaw:6.1f}")
-                    gps_var.set(f"{payload.lat:.6f}, {payload.lon:.6f}")
+                    rph_var.set(f"R:{payload.roll:6.1f}  P:{payload.pitch:6.1f}  H:{payload.heading:6.1f}")
+                    pos_var.set(f"({payload.x:.2f}, {payload.y:.2f})")
                     pid_var.set(f"{payload.pid_output:6.1f}")
-                    dest_yaw_var.set(f"{payload.destination_yaw:6.1f}°")
                     draw_motor_gauge(pid_gauge, int(payload.pid_output))
-                    if dist is not None:
-                        dist_var.set(f"{dist:.1f} m  /  {brg:.1f}°")
                     alt_buf.append(payload.alt)
                     if len(alt_buf) > MAX_PTS:
                         alt_buf.pop(0)
@@ -564,7 +487,7 @@ def run_gui(poller: Poller, recorder: Recorder, dest: DestinationTracker,
         root.after(100, drain_queue)
 
     def on_close():
-        # 念のため終了時にもモーター停止を送っておく（機体側フェイルセイフの二重化）
+        # 念のため終了時にもモーター停止を送っておく
         _send_motor_command(motor_cmd.url, 0, 0, motor_cmd.timeout_s)
         stop_event.set()
         poller.join(timeout=2)
@@ -589,52 +512,35 @@ def main() -> None:
                          help="GETポーリング間隔 [ms]")
     parser.add_argument("--timeout", type=float, default=0.5,
                          help="GETタイムアウト [秒]")
-    parser.add_argument("--dest-lat", type=float, default=None,
-                         help="目的地の緯度（距離・方位・地図表示に加え、GET /goalで機体側の実際の"
-                              "目的地としても設定する。省略可）")
-    parser.add_argument("--dest-lon", type=float, default=None,
-                         help="目的地の経度（--dest-latとセットで指定する）")
     parser.add_argument("--headless", action="store_true",
                          help="Tkinter/matplotlibを使わずターミナル＋CSVのみで動作する")
     args = parser.parse_args()
 
-    if (args.dest_lat is None) != (args.dest_lon is None):
-        parser.error("--dest-lat と --dest-lon はセットで指定してください")
-
     url = f"http://{args.host}:{args.port}{args.path}"
     motor_url = f"http://{args.host}:{args.port}/motor"
-    goal_url = f"http://{args.host}:{args.port}/goal"
     print(f"Polling {url} every {args.interval_ms}ms ...")
-    if args.dest_lat is not None:
-        print(f"Destination: {args.dest_lat:.6f}, {args.dest_lon:.6f}")
+    print("注意: lat/lonはGPS度数ではなく着地位置からのx/y距離[m]として解釈します"
+          "（test_dead_reckoning系ファームウェア専用）。\n")
 
     out_queue: "queue.Queue" = queue.Queue()
     stop_event = threading.Event()
     poller = Poller(url, args.interval_ms / 1000, args.timeout, out_queue, stop_event)
     recorder = Recorder()
-    dest = DestinationTracker(args.dest_lat, args.dest_lon)
-
-    # --dest-lat/lonが指定されていれば、地図表示だけでなく機体側の実際の目的地
-    # （GET /goal）も同じ座標に揃える（表示上の目的地と機体が向かう先が食い違わないように）。
-    if args.dest_lat is not None:
-        goal_sender = GoalSender(goal_url, args.dest_lat, args.dest_lon,
-                                  retry_interval_s=2.0, timeout_s=0.5, stop_event=stop_event)
-        goal_sender.start()
 
     if args.headless:
-        run_headless(poller, recorder, dest, out_queue, stop_event)
+        run_headless(poller, recorder, out_queue, stop_event)
         return
 
     # 機体のフェイルセイフ（1秒無通信で自動的に出力0）より十分短い間隔で送り続ける
     motor_cmd = MotorCommander(motor_url, send_interval_s=0.25, timeout_s=0.5, stop_event=stop_event)
 
     try:
-        run_gui(poller, recorder, dest, motor_cmd, out_queue, stop_event)
+        run_gui(poller, recorder, motor_cmd, out_queue, stop_event)
     except ImportError as e:
         print(f"GUI依存関係が利用できないため --headless モードで動作します（{e}）。", file=sys.stderr)
         stop_event = threading.Event()
         poller = Poller(url, args.interval_ms / 1000, args.timeout, out_queue, stop_event)
-        run_headless(poller, recorder, dest, out_queue, stop_event)
+        run_headless(poller, recorder, out_queue, stop_event)
 
 
 if __name__ == "__main__":

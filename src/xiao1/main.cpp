@@ -2,27 +2,30 @@
 #include "shared.h"
 #include "tasks/task_sensor.h"
 #include "tasks/task_gps.h"
-#include "tasks/task_wifi.h"
+#include "tasks/task_navigation.h"
 #include "tasks/task_spi_link.h"
+#include "tasks/task_mission.h"
 
 static Shared shared;
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("XIAO1 (sensor/GPS/WiFi) booting...");
+    Serial.println("XIAO1 (sensor/GPS/navigation/SPI master) booting...");
 
     shared.mutex = xSemaphoreCreateMutex();
 
-    // Core 0（WiFi/BT系）
-    xTaskCreatePinnedToCore(taskGPS,  "taskGPS",  4096, &shared, 3, nullptr, 0);
-    xTaskCreatePinnedToCore(taskWifi, "taskWifi", 4096, &shared, 2, nullptr, 0);
+    // Core 0
+    xTaskCreatePinnedToCore(taskGPS, "taskGPS", 4096, &shared, 3, nullptr, 0);
 
-    // Core 1（リアルタイム系）
-    xTaskCreatePinnedToCore(taskSensor,  "taskSensor",  4096, &shared, 5, nullptr, 1);
-    xTaskCreatePinnedToCore(taskSpiLink, "taskSpiLink", 4096, &shared, 4, nullptr, 1);
+    // Core 1（リアルタイム系。優先度はセンサー→誘導PID・ミッション判定→SPI送信の依存順）
+    xTaskCreatePinnedToCore(taskSensor,     "taskSensor",     4096, &shared, 5, nullptr, 1);
+    xTaskCreatePinnedToCore(taskNavigation, "taskNavigation", 4096, &shared, 4, nullptr, 1);
+    xTaskCreatePinnedToCore(taskMission,    "taskMission",    4096, &shared, 4, nullptr, 1);
+    xTaskCreatePinnedToCore(taskSpiLink,    "taskSpiLink",    4096, &shared, 3, nullptr, 1);
 
-    // TODO: taskStateMachine（ミッションステート遷移）は未実装。
-    //       現状 shared.state は STANDBY のまま固定される。
+    // taskMissionがSETTING〜GOAL/ABORTEDのシーケンス（docs/architecture.md参照）を進行させ、
+    // shared.stateとDeployer（ニクロム線・LED）を制御する。
+    // WiFi/地上局とのテレメトリ・手動操作コマンドはXIAO2側（Radio）が担当する。
 }
 
 void loop() {
