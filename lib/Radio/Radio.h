@@ -1,16 +1,11 @@
 #pragma once
 #include <Arduino.h>
-#include "spi_protocol.h"
 
 // PULL方式（PC側がHTTP GETで取りに来る）でテレメトリを配信する。
 // XIAO ESP32S3のSoftAP + 標準WebServerを使用（WebSocketは使わない）。
 // 理由: 機体→PCのPUSH（WebSocket/POST）はPC側ファイアウォールに
 //       着信をブロックされる環境があり信頼できないため。
-//
-// XIAO2がXIAO1からSPIで受信したSpiFrameToXiao2をそのままワイヤーフレームとして
-// 中継する（フィールドレイアウトはspi_protocol.hのコメントを参照）。
-// Python側 (ground/receiver.py) / dashboard.h と共有する契約なので、
-// spi_protocol.hのSpiFrameToXiao2を変更する場合は両方直すこと。
+
 class Radio {
 public:
     static constexpr size_t FRAME_SIZE = sizeof(SpiFrameToXiao2);
