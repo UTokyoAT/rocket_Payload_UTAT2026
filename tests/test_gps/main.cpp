@@ -33,6 +33,8 @@ void loop() {
         _lastPrintMs = now;
 
         if (gps.isValid()) {
+            auto staticLatLon = gps.getStaticLatLon(10);
+            debug.printf("static lat=%.6f static lon=%.6f", staticLatLon[0], staticLatLon[1]);
             debug.printf("lat=%.6f lon=%.6f alt=%.1fm sats=%d hdop=%.1f",
                          gps.getLat(), gps.getLon(), gps.getAltitude(),
                          gps.satellites(), gps.hdop());
