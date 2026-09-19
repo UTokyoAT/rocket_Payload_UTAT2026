@@ -3,8 +3,8 @@
 #include <WebServer.h>
 #include <stdarg.h>
 
-static const char* AP_SSID = "CanSat-AP";
-static const char* AP_PASS = "cansat2026";
+static const char* AP_SSID = "payload2026";
+static const char* AP_PASS = "small";
 
 static WebServer _server(80);
 

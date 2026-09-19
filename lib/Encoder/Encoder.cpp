@@ -1,9 +1,9 @@
 #include "Encoder.h"
 
 const int PIN_RA = 2;   // エンコーダ右A相
-const int PIN_RB = 3;   // エンコーダ右B相
-const int PIN_LA = 2;   // エンコーダ左A相
-const int PIN_LB = 3;   // エンコーダ左B相
+const int PIN_RB = 1;   // エンコーダ右B相
+const int PIN_LA = 3;   // エンコーダ左A相
+const int PIN_LB = 4;   // エンコーダ左B相
 
 const float GEAR_RATIO = 100.0;     // モーターの減速比
 const float PPR = 7.0;              // Pulses Per Revolution、軸が一回転する間に出るパルスの数
@@ -50,12 +50,12 @@ void IRAM_ATTR Encoder::updateLeft() {
     leftLastState = leftCurrentState;
 }
 
-float Encoder::getRightRevolutions() {
-    rightRevolutions = rightEncoderCount / COUNTS_PER_REV;
+double Encoder::getRightRevolutions() {
+    rightRevolutions = rightEncoderCount / COUNTS_PER_REV * TWO_PI;
     return rightRevolutions;
 }
 
-float Encoder::getLeftRevolutions() {
-    leftRevolutions = leftEncoderCount / COUNTS_PER_REV;
+double Encoder::getLeftRevolutions() {
+    leftRevolutions = leftEncoderCount / COUNTS_PER_REV * TWO_PI;
     return leftRevolutions;
 }

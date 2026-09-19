@@ -5,11 +5,11 @@ class Encoder {
 public:
     void begin();
 
-    float getRightRevolutions();
-    float getLeftRevolutions();
+    double getRightRevolutions();
+    double getLeftRevolutions();
 
-    float rightRevolutions = 0;
-    float leftRevolutions = 0;
+    double rightRevolutions = 0;
+    double leftRevolutions = 0;
 
 private:
     static void updateRight();

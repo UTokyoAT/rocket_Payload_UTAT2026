@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: $__env{INFLUXDB_INIT_ORG}
+      defaultBucket: $__env{INFLUXDB_INIT_BUCKET}
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: Token $__env{INFLUXDB_INIT_ADMIN_TOKEN}
+    isDefault: true
+    editable: true

@@ -4,6 +4,8 @@
 .vscode/launch.json
 .vscode/ipch/
 ground/logs/
+ground/server/.env
+include/secrets.h
 
 # KiCadのローカル履歴機能が生成する入れ子のgitリポジトリ（コミットなしのためgit add -Aが失敗する）
 **/.history/

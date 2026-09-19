@@ -1,0 +1,14 @@
+{
+  "name": "Telemetry",
+  "version": "0.1.0",
+  "description": "Wi-Fi(STA) + MQTT(QoS1) でデータを地上局へ送る。本番の統合レコード送信と、切り分けテスト用の任意フィールド送信・ログ送信を持つ",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "dependencies": [
+    {
+      "owner": "bertmelis",
+      "name": "espMqttClient",
+      "version": "^1.7.0"
+    }
+  ]
+}
