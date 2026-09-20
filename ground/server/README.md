@@ -32,11 +32,18 @@ ESP32-S3 --(MQTT, QoS1)--> Mosquitto --(subscribe)--> Telegraf --(write)--> Infl
 
 | トピック | 送信元API | QoS | measurement | 用途 |
 |---|---|---|---|---|
-| `rocket/telemetry` | `publishRecord()` | 1 | `rocket_telemetry` | 本番の統合レコード(10Hz)。`ts_utc`(GNSS由来)がポイントの時刻になる |
-| `rocket/test/<name>` | `sendTest()` | 0 | `rocket_test` (tag: `test_name`) | 切り分けテスト。送った数値フィールドだけをそのまま保存。時刻は受信時刻 |
+| `rocket/telemetry` | `publishRecord()` | 1 | `rocket_telemetry` | 本番の統合レコード(10Hz)。`seq`(連番)と`uptime_ms`(起動からの経過時間)を含む |
+| `rocket/test/<name>` | `sendTest()` | 0 | `rocket_test` (tag: `test_name`) | 切り分けテスト。送った数値フィールド(と`uptime_ms`)だけをそのまま保存 |
 | `rocket/log` | `log()` | 0 | `rocket_log` (field: `value`) | テキスト1行のログ |
 
-本番レコードは欠けたフィールド(センサー故障・GNSS未取得など)があっても、あるものだけ書き込まれる(`ts_utc`は必須)。
+本番レコードは欠けたフィールド(センサー故障・GNSS未取得など)があっても、あるものだけ書き込まれる。
+
+**時刻について**: ロボットは絶対時刻(GNSS等)を持たない。InfluxDBの`_time`はサーバーが受信した時刻で、リアルタイム表示にはそのまま使える。
+ただし通信断から再送された分は受信時刻がずれるので、走行後の解析では次のフィールドを使う。
+
+- `uptime_ms` … 時間軸(ロボット起動からの経過時間)
+- `seq` … 欠落と重複の検出(QoS1は稀に同じレコードが2回届く。`seq`が同じなら重複)
+- ロボットを再起動すると`uptime_ms`も`seq`も0から数え直す。別の走行かどうかは`_time`で区別する
 
 ## 動作確認(mosquitto_pubでダミーデータ送信)
 
@@ -45,7 +52,7 @@ ESP32-S3 --(MQTT, QoS1)--> Mosquitto --(subscribe)--> Telegraf --(write)--> Infl
 ```
 docker compose exec mosquitto mosquitto_pub -t rocket/telemetry -q 1 -m '{
   "seq": 1,
-  "ts_utc": "2026-09-19T03:15:22.100Z",
+  "uptime_ms": 12345,
   "pos": { "lat": 35.123456, "lon": 139.123456, "alt": 12.3 },
   "imu": { "ax": 0.01, "ay": -0.02, "az": 9.79, "gx": 0.1, "gy": 0.0, "gz": -0.1 },
   "baro": { "pressure_hpa": 1013.2, "alt_m": 12.1 },

@@ -32,8 +32,8 @@ public:
     // MQTTブローカーに接続済みか
     bool isConnected() const;
 
-    // 本番用の統合レコードをQoS1で送る。seq はここで採番する。
-    // record.utc_ms が0(GNSS時刻未取得)のときは何も送らず false を返す。
+    // 本番用の統合レコードをQoS1で送る。seq(連番)と uptime_ms(起動からの経過時間)は
+    // ここで付ける。起動のたびに両方とも0から数え直す。
     // 切断中でも受け付けてRAM上のoutboxに積み、再接続後に再送する(空きヒープが
     // 16KBを切ると新規は拒否され false)。電源断・再起動では失われる。
     bool publishRecord(const TelemetryRecord& record);

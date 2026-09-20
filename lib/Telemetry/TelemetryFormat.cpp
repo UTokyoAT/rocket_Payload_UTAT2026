@@ -24,7 +24,12 @@ struct Writer {
         buf[len]   = '\0';
     }
 
-    void str(const char* s) { while (*s) ch(*s++); }
+    void str(const char* s) {
+        while (*s != '\0') {
+            ch(*s);         
+            s++;            
+        }
+    }
 
     __attribute__((format(printf, 2, 3))) void fmt(const char* f, ...) {
         if (!ok) return;
@@ -60,7 +65,7 @@ void writeNumber(Writer& w, double v, int decimals) {
     else                            w.fmt("%.15g", v);
 }
 
-// 有限値が1つもなければグループごと省略する。先頭に常に ',' を付ける（seq/ts_utc の後ろに続けるため）。
+// 有限値が1つもなければグループごと省略する。先頭に常に ',' を付ける（seq/uptime_ms の後ろに続けるため）。
 void writeGroup(Writer& w, const char* name, const Num* nums, size_t n) {
     bool any = false;
     for (size_t i = 0; i < n; i++) {
@@ -84,37 +89,12 @@ void writeGroup(Writer& w, const char* name, const Num* nums, size_t n) {
 
 }  // namespace
 
-void telemetryFormatUtc(char* buf, size_t cap, uint64_t utc_ms) {
-    uint64_t secs = utc_ms / 1000;
-    unsigned ms   = static_cast<unsigned>(utc_ms % 1000);
-    uint64_t days = secs / 86400;
-    unsigned rem  = static_cast<unsigned>(secs % 86400);
-
-    // days since 1970-01-01 -> civil date (Howard Hinnant's algorithm)
-    int64_t  z   = static_cast<int64_t>(days) + 719468;
-    int64_t  era = z / 146097;
-    unsigned doe = static_cast<unsigned>(z - era * 146097);
-    unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    int64_t  y   = static_cast<int64_t>(yoe) + era * 400;
-    unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    unsigned mp  = (5 * doy + 2) / 153;
-    unsigned d   = doy - (153 * mp + 2) / 5 + 1;
-    unsigned m   = mp < 10 ? mp + 3 : mp - 9;
-    if (m <= 2) y++;
-
-    snprintf(buf, cap, "%04d-%02u-%02uT%02u:%02u:%02u.%03uZ",
-             static_cast<int>(y), m, d, rem / 3600, (rem % 3600) / 60, rem % 60, ms);
-}
-
-size_t telemetryFormatRecord(char* buf, size_t cap, const TelemetryRecord& r, uint32_t seq) {
-    if (r.utc_ms == 0) return 0;
-
-    char ts[32];
-    telemetryFormatUtc(ts, sizeof(ts), r.utc_ms);
-
+size_t telemetryFormatRecord(char* buf, size_t cap, const TelemetryRecord& r, uint32_t seq,
+                             uint32_t uptime_ms) {
     Writer w(buf, cap);
     w.ch('{');
-    w.fmt("\"seq\":%lu,\"ts_utc\":\"%s\"", static_cast<unsigned long>(seq), ts);
+    w.fmt("\"seq\":%lu,\"uptime_ms\":%lu", static_cast<unsigned long>(seq),
+          static_cast<unsigned long>(uptime_ms));
 
     const Num pos[] = {
         {"lat", r.pos.lat, 7}, {"lon", r.pos.lon, 7}, {"alt", r.pos.alt, 2},

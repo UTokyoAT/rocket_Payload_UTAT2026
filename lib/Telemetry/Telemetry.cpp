@@ -85,11 +85,9 @@ bool Telemetry::publishRaw(const char* topic, uint8_t qos, const char* payload, 
 }
 
 bool Telemetry::publishRecord(const TelemetryRecord& record) {
-    if (record.utc_ms == 0) return false;
-
     char payload[768];
     uint32_t seq = _seq.fetch_add(1);
-    size_t   n   = telemetryFormatRecord(payload, sizeof(payload), record, seq);
+    size_t   n   = telemetryFormatRecord(payload, sizeof(payload), record, seq, millis());
     if (n == 0) return false;
 
     char topic[64];
