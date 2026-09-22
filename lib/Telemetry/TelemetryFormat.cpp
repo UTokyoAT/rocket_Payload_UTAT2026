@@ -113,7 +113,7 @@ size_t telemetryFormatRecord(char* buf, size_t cap, const TelemetryRecord& r, ui
     writeGroup(w, "baro", baro, 2);
 
     const Num encoder[] = {
-        {"right_rev", r.encoder.right_rev, 5}, {"left_rev", r.encoder.left_rev, 5},
+        {"right_rev", r.encoder.right_rev, 7}, {"left_rev", r.encoder.left_rev, 7},
     };
     writeGroup(w, "encoder", encoder, 2);
 

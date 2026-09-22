@@ -21,7 +21,7 @@ public:
         const char* mqttHost    = nullptr;  // Mosquittoを動かしているPCのIP
         uint16_t    mqttPort    = 1883;
         const char* clientId    = "xiao-esp32s3";
-        const char* topicPrefix = "rocket";
+        const char* topicPrefix = "rocket_payload";
     };
 
     Telemetry();

@@ -10,7 +10,7 @@
 struct TelemetryPos     { double lat = NAN; double lon = NAN; float alt = NAN; };
 struct TelemetryImu     { float ax = NAN, ay = NAN, az = NAN, gx = NAN, gy = NAN, gz = NAN; };
 struct TelemetryBaro    { float pressure_hpa = NAN; float alt_m = NAN; };
-struct TelemetryEncoder { float right_rev = NAN; float left_rev = NAN; };
+struct TelemetryEncoder { double right_rev = NAN; double left_rev = NAN; };
 struct TelemetryGnss    { int fix = -1; float hdop = NAN; int sats = -1; };  // fix/sats は負値で未取得
 struct TelemetryEkf     {
     float position_N = NAN, position_E = NAN, speed = NAN, azimuth = NAN;
