@@ -51,7 +51,7 @@ void loop() {
 | `mqttHost` | Mosquittoを動かしているPCのIPアドレス。**必須** |
 | `mqttPort` | MQTTブローカーのポート。デフォルト `1883` |
 | `clientId` | MQTTクライアントID。デフォルト `"xiao-esp32s3"` |
-| `topicPrefix` | トピックの先頭(`<prefix>/telemetry` など)。デフォルト `"rocket_payload"`(サーバー側の`ground/server/README.md`では `rocket` を使う例になっているので、実運用ではサーバー設定と合わせること) |
+| `topicPrefix` | トピックの先頭(`<prefix>/telemetry` など)。デフォルト `"rocket"`(`ground/server/telegraf/telegraf.conf` が `rocket/...` を購読しているので、変える場合はサーバー側も合わせること) |
 
 ## `Telemetry` クラスのメソッド
 
