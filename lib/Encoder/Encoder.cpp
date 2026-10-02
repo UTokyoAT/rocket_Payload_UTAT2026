@@ -5,7 +5,7 @@ const int PIN_RB = 1;   // エンコーダ右B相
 const int PIN_LA = 3;   // エンコーダ左A相
 const int PIN_LB = 4;   // エンコーダ左B相
 
-const float GEAR_RATIO = 100.0;     // モーターの減速比
+const float GEAR_RATIO = 210.0;     // モーターの減速比
 const float PPR = 7.0;              // Pulses Per Revolution、軸が一回転する間に出るパルスの数
 const float COUNTS_PER_REV = PPR * GEAR_RATIO * 4.0;  // 1回転あたりのカウント数
 
@@ -58,4 +58,18 @@ double Encoder::getRightRevolutions() {
 double Encoder::getLeftRevolutions() {
     leftRevolutions = leftEncoderCount / COUNTS_PER_REV * TWO_PI;
     return leftRevolutions;
+}
+
+double Encoder::getRightDeltaAngle() {
+    double angle = getRightRevolutions();
+    double delta = angle - rightLastAngle;
+    rightLastAngle = angle;
+    return delta;
+}
+
+double Encoder::getLeftDeltaAngle() {
+    double angle = getLeftRevolutions();
+    double delta = angle - leftLastAngle;
+    leftLastAngle = angle;
+    return delta;
 }

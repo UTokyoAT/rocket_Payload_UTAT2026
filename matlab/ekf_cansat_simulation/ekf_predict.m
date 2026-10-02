@@ -1,6 +1,8 @@
 function [x_pred, P_pred] = ekf_predict(x, P, a_meas, omega_meas, dt, Q)
 % EKF_PREDICT  要件書1.2〜1.4節の予測ステップ。
 %   x = [p_N; p_E; v; theta; b_a; b_g]
+%   Q は ekf_setup で一度だけ計算した B・Q_w・B^T を受け取る。
+%   F は直前の推定値 v, θ で毎ステップ評価し直す。
 
 p_N = x(1); p_E = x(2); v = x(3); theta = x(4); b_a = x(5); b_g = x(6);
 

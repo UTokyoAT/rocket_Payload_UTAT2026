@@ -1,17 +1,14 @@
-function [x_upd, P_upd] = ekf_update(x, P, z, h_x, H, R)
-% EKF_UPDATE  汎用EKF更新ステップ（エンコーダ・GNSS共通、要件書4章の要求どおり
-%   観測モデルに依存しない汎用形にしてある）。
+function [x_upd, P_upd, y, S] = ekf_update(x, P, z, h_x, H, R)
+% EKF_UPDATE  汎用 EKF 更新ステップ（エンコーダ・GNSS 位置で共用）。
+%   角度観測の折り返し処理は含まない（COG は ekf_update_cog を使う）。
 %
 %   z   : 観測ベクトル
-%   h_x : 現在の予測状態xでの観測関数h(x)の値（呼び出し側で評価して渡す）
+%   h_x : 予測状態での観測関数 h(x) の値（呼び出し側で評価して渡す）
 %   H   : 観測ヤコビアン
 %   R   : 観測ノイズ共分散
+%   y, S : イノベーションとその共分散（ログ用）
 
-y = z - h_x;                 % innovation
-S = H * P * H' + R;
-K = P * H' / S;
-
-x_upd = x + K * y;
-P_upd = (eye(size(P)) - K * H) * P;
+y = z - h_x;
+[x_upd, P_upd, S] = ekf_apply_innovation(x, P, y, H, R);
 
 end
