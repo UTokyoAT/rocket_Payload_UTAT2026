@@ -10,12 +10,13 @@
 // Connect pin #18 (RESET, active LOW) to a microcontroller output pin via 10kΩ
 // Connect pin #9 of the expander to ground (common ground)
 
+static const int PIN_RESET = 7;  // D8(GPIO7) → MCP23008 RESET（10kΩ経由）
+
 static Adafruit_MCP23X08 mcp;
 
-bool Expander::setup(int resetPin) {
-    _resetPin = resetPin;
-    pinMode(_resetPin, OUTPUT);
-    digitalWrite(_resetPin, HIGH);  // 平常時はHIGH（リセット解除）
+bool Expander::setup() {
+    pinMode(PIN_RESET, OUTPUT);
+    digitalWrite(PIN_RESET, HIGH);  // 平常時はHIGH（リセット解除）
 
     _expanderReady = mcp.begin_I2C();
     if (!_expanderReady) {
@@ -65,9 +66,9 @@ bool Expander::reset() {
         return false;
     }
 
-    digitalWrite(_resetPin, LOW);
+    digitalWrite(PIN_RESET, LOW);
     delayMicroseconds(10);
-    digitalWrite(_resetPin, HIGH);
+    digitalWrite(PIN_RESET, HIGH);
     delay(1);  // 10kΩ経由のRC遅延を見込んで復帰を待つ
 
     // ハードリセットでレジスタが初期値（全ピンINPUT）に戻るため、有効化済みピンだけ再設定する

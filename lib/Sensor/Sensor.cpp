@@ -94,7 +94,8 @@ bool Sensor::begin() {
 void Sensor::update() {
     if (_bmp280Ready) {
         _pressure    = _bmp.readPressure() / 100.0f;  // Pa -> hPa
-        _altitude    = _bmp.readAltitude(_groundLevelHpa);
+        // readAltitude()は内部でreadPressure()を再度呼びI2Cを余分に読むため、取得済みの気圧から計算する
+        _altitude    = 44330.0f * (1.0f - powf(_pressure / _groundLevelHpa, 0.1903f));
     }
 
     if (_mpu6050Ready) {

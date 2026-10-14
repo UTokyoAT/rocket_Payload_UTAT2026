@@ -15,16 +15,26 @@ void Deployer::begin(Expander& expander) {
 
 void Deployer::deployRocket() {
     if (!_expander) return;
-    
-    _expander->set_high(PIN_ROCKET);
+
+    setRocket(true);
     delay(DELAY_ms);
-    _expander->set_low(PIN_ROCKET);
+    setRocket(false);
 }
 
 void Deployer::deployParachute() {
     if (!_expander) return;
-    
-    _expander->set_high(PIN_PARACHUTE);
+
+    setParachute(true);
     delay(DELAY_ms);
-    _expander->set_low(PIN_PARACHUTE);
+    setParachute(false);
+}
+
+bool Deployer::setRocket(bool on) {
+    if (!_expander) return false;
+    return on ? _expander->set_high(PIN_ROCKET) : _expander->set_low(PIN_ROCKET);
+}
+
+bool Deployer::setParachute(bool on) {
+    if (!_expander) return false;
+    return on ? _expander->set_high(PIN_PARACHUTE) : _expander->set_low(PIN_PARACHUTE);
 }

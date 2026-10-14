@@ -1,7 +1,8 @@
 #include "Actuator.h"
 
 // エクスパンダ・XIAO実配線
-// motor_PWMA: D9(GPIO8)          motor_PWMB: D10(GPIO9)   … マイコン直結（PWM出力）
+// motor_PWMA: D9(GPIO8)          
+// motor_PWMB: D10(GPIO9)   … マイコン直結（PWM出力）
 // motor_AIN2: Expander GP2  motor_AIN1: Expander GP3
 // motor_STBY: Expander GP4
 // motor_BIN1: Expander GP5  motor_BIN2: Expander GP6      … エキスパンダ経由（方向制御）
