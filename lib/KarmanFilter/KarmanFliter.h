@@ -72,7 +72,7 @@ public:
     void ekf_setup(const EkfConfig& config, const EkfCalibration& cal);
 
     // EKFの更新（1.8節の順序：予測 → エンコーダ更新 → GNSS位置更新 → COG更新）。
-    //   a_meas     : 加速度計の前後軸生値 [m/s^2]
+    //   a_meas     : 機体前方を正とする前後加速度 [m/s^2]
     //   omega_meas : ジャイロのz軸生値 [rad/s]（時計回り正）
     //   v_R, v_L   : 左右輪の周速 [m/s]（Encoder の角度差分から wheelSpeed() で求める）
     //   fix        : このステップで新しいGNSS fixが届いていればそのポインタ、なければ nullptr

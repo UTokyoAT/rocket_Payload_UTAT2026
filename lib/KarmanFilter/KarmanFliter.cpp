@@ -53,8 +53,8 @@ void KalmanFilter::ekf_setup(const EkfConfig& config, const EkfCalibration& cal)
 
     // --- エンコーダ（1.5節） ---
     memset(H_enc, 0, sizeof(H_enc));
-    H_enc[0][V] = 1;  H_enc[0][BG] = -cfg.L / 2;
-    H_enc[1][V] = 1;  H_enc[1][BG] = cfg.L / 2;
+    H_enc[0][V] = 1;  H_enc[0][BG] = cfg.L / 2;
+    H_enc[1][V] = 1;  H_enc[1][BG] = -cfg.L / 2;
     memset(R_enc, 0, sizeof(R_enc));
     R_enc[0][0] = cfg.r * cfg.r * 2 * cfg.sigma_theta_R * cfg.sigma_theta_R / (dt * dt);
     R_enc[1][1] = cfg.r * cfg.r * 2 * cfg.sigma_theta_L * cfg.sigma_theta_L / (dt * dt);
@@ -151,14 +151,14 @@ void KalmanFilter::predict(double a_meas, double omega_meas) {
     F[PN][THETA] = -v * s * dt;
     F[PE][V]     = s * dt;
     F[PE][THETA] = v * c * dt;
-    F[V][BA]     = dt;
-    F[THETA][BG] = dt;
+    F[V][BA]     = -dt;
+    F[THETA][BG] = -dt;
 
     // 状態の予測
     x[PN]    += v * c * dt;
     x[PE]    += v * s * dt;
-    x[V]     -= (a_meas - x[BA]) * dt;
-    x[THETA]  = wrapToPi(x[THETA] - (omega_meas - x[BG]) * dt);
+    x[V]     += (a_meas - x[BA]) * dt;
+    x[THETA]  = wrapToPi(x[THETA] + (omega_meas - x[BG]) * dt);
     // b_a, b_g は不変
 
     // P = F・P・F^T + Q
@@ -181,12 +181,12 @@ void KalmanFilter::predict(double a_meas, double omega_meas) {
 // 観測更新
 // =============================================================================
 
-// エンコーダ（1.5節）：h_enc(x) = [v + (L/2)(ω_meas − b_g), v - (L/2)(ω_meas − b_g)]
+// エンコーダ（1.5節）：h_enc(x) = [v − (L/2)(ω_meas − b_g), v + (L/2)(ω_meas − b_g)]（ω 時計回り正：右旋回で右輪が内側）
 void KalmanFilter::updateEncoder(double v_R, double v_L, double omega_meas) {
     const double w_corr = omega_meas - x[BG];
     const double y[2] = {
-        v_R - (x[V] + cfg.L / 2 * w_corr),
-        v_L - (x[V] - cfg.L / 2 * w_corr),
+        v_R - (x[V] - cfg.L / 2 * w_corr),
+        v_L - (x[V] + cfg.L / 2 * w_corr),
     };
     double S[2][2];
     applyInnovation<2>(H_enc, y, R_enc, S);
