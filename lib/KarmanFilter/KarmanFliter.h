@@ -18,20 +18,20 @@ struct EkfConfig {
     double dt = 0.1;                    // [s] 予測・エンコーダ更新の周期
 
     // 3.2 IMU（MPU6050）
-    double sigma_a    = 0.26;           // [m/s^2] 加速度計白色雑音
-    double sigma_g    = 0.000872665;    // [rad/s] ジャイロ白色雑音（0.05 deg/s）
-    double sigma_rw_a = 0.001;          // [m/s^2/√s] 加速度計バイアス ランダムウォーク
-    double sigma_rw_g = 0.000174533;    // [rad/s/√s] ジャイロバイアス ランダムウォーク（0.01 deg/s）
+    double sigma_a    = 0.2;            // [m/s^2] 加速度計白色雑音。センサ単体は 0.008。傾き補正が未実装なので走行時の傾き・振動分を見込む（推奨 0.1〜0.3） // TODO(実測)
+    double sigma_g    = 7.4e-4;         // [rad/s] ジャイロ白色雑音。MPU6050 静置1時間試験（2026-10-03）の実測 // TODO(実測)
+    double sigma_rw_a = 0.02;           // [m/s^2/√s] 加速度計バイアス ランダムウォーク。路面勾配の変化を b_a の変化として数秒で追従させる // TODO(実測)
+    double sigma_rw_g = 1e-5;           // [rad/s/√s] ジャイロバイアス ランダムウォーク。実測上限 3.5e-6 に屋外の温度変化の余裕を見込む // TODO(実測)
 
-    // 3.2 エンコーダ（AS5600、左右別個体）
-    double sigma_theta_R = 0.00872665;  // [rad] 右輪 角度読み取りノイズ（0.5 deg）
-    double sigma_theta_L = 0.00872665;  // [rad] 左輪 角度読み取りノイズ（0.5 deg）
+    // 3.2 エンコーダ（ホールエンコーダ、左右別個体）
+    double sigma_theta_R = 1e-3;        // [rad] 右輪 角度読み取りノイズ。量子化 3.1e-4 rad に滑り分の余裕を足す // TODO(実測)
+    double sigma_theta_L = 1e-3;        // [rad] 左輪 角度読み取りノイズ。量子化 3.1e-4 rad に滑り分の余裕を足す // TODO(実測)
 
     // 3.2 GNSS（NEO-6M）
     double sigma_N     = 2.12;          // [m] 北方向 位置ノイズ
     double sigma_E     = 2.12;          // [m] 東方向 位置ノイズ
     double sigma_cog   = 0.00872665;    // [rad] COGノイズ（0.5 deg）
-    double v_threshold = 0.2;           // [m/s] COG更新を有効とみなす最小SOG
+    double v_threshold = 0.1;           // [m/s] COG更新を有効とみなす最小SOG。全速 0.268 m/s に対し、SOG ノイズ 0.1 m/s でも巡航中の COG 更新が落ちないようにする // TODO(実測)
 
     // 2.2 初期共分散 P0
     int    N_avg        = 10;           // [回] 測位の平均回数
