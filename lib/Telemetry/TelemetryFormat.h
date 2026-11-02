@@ -16,6 +16,7 @@ struct TelemetryEkf     {
     float position_N = NAN, position_E = NAN, speed = NAN, azimuth = NAN;
     float bias_accel = NAN, bias_gyro = NAN;
 };
+struct TelemetryMotor   { float duty_l = NAN, duty_r = NAN; };  // [-1, 1]。取り付け向きの符号を掛ける前の値
 
 // 本番用の統合レコード（要件書4.2）。seq と uptime_ms は Telemetry 側で付ける。
 struct TelemetryRecord {
@@ -25,6 +26,7 @@ struct TelemetryRecord {
     TelemetryEncoder encoder;
     TelemetryGnss    gnss;
     TelemetryEkf     ekf;
+    TelemetryMotor   motor;
 };
 
 // 切り分けテスト用の任意フィールド。数値なら何でも渡せる（{"pressure", p} のように書く）。

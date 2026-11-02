@@ -100,6 +100,7 @@ MQTTブローカーに接続済みかを返す。
 | `encoder` | `TelemetryEncoder` | `right_rev`, `left_rev`(double) | 左右ホイールエンコーダーの累積回転数 |
 | `gnss` | `TelemetryGnss` | `fix`, `sats`(int, 未取得は負値), `hdop`(float) | GNSSのFix種別・衛星数・HDOP |
 | `ekf` | `TelemetryEkf` | `position_N`, `position_E`, `speed`, `azimuth`, `bias_accel`, `bias_gyro`(float) | EKF(拡張カルマンフィルタ)推定値。北方向/東方向位置・速度・方位角・バイアス推定値 |
+| `motor` | `TelemetryMotor` | `duty_l`, `duty_r`(float) | 左右モーターのデューティ -1〜1 |
 
 ## `TelemetryField`(`sendTest()` 用の任意フィールド)
 
@@ -142,4 +143,5 @@ Arduino非依存になっており、PC上でも単体検証できるよう`Tele
 | `ekf.position_N/E`, `speed` | 小数点以下3桁 |
 | `ekf.azimuth` | 小数点以下2桁 |
 | `ekf.bias_accel/gyro` | 小数点以下6桁 |
+| `motor.*` | 小数点以下3桁 |
 | `sendTest()` のフィールド | `isInt`なら整数、`isFloat`なら有効数字7桁、それ以外(double)は有効数字15桁 |

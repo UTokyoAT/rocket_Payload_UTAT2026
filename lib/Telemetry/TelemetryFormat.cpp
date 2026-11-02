@@ -131,6 +131,11 @@ size_t telemetryFormatRecord(char* buf, size_t cap, const TelemetryRecord& r, ui
     };
     writeGroup(w, "EKF", ekf, 6);
 
+    const Num motor[] = {
+        {"duty_l", r.motor.duty_l, 3}, {"duty_r", r.motor.duty_r, 3},
+    };
+    writeGroup(w, "motor", motor, 2);
+
     w.ch('}');
     return w.ok ? w.len : 0;
 }
