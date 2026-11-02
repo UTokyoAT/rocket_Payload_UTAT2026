@@ -11,6 +11,9 @@ public:
     double getLon();        // [deg]
     float  getAltitude();   // [m] GPS高度（気圧高度と別）
     bool   isValid();
+    double getCourseDeg();  // [deg] 真北基準・時計回り（RMC の Course Over Ground）
+    double getSpeedMps();   // [m/s] 対地速度（RMC の Speed Over Ground）
+    bool   isCourseValid(); // COG・SOG がともに有効なら true
 
     // 前回呼び出し以降に新しい位置情報（NMEAセンテンス）を受信していればtrue。
     // getLat()/getLon()（内部で.lat()/.lng()を呼ぶ）より前に呼ぶこと

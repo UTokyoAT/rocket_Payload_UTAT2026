@@ -17,6 +17,9 @@ double GPS::getLat()      { return _gps.location.lat(); }
 double GPS::getLon()      { return _gps.location.lng(); }
 float  GPS::getAltitude() { return (float)_gps.altitude.meters(); }
 bool   GPS::isValid()     { return _gps.location.isValid(); }
+double GPS::getCourseDeg()  { return _gps.course.deg(); }
+double GPS::getSpeedMps()   { return _gps.speed.mps(); }
+bool   GPS::isCourseValid() { return _gps.course.isValid() && _gps.speed.isValid(); }
 bool   GPS::locationUpdated() { return _gps.location.isUpdated(); }
 
 std::array<double, 2> GPS::getStaticLatLon(int num_get){
