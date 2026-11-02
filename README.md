@@ -6,61 +6,53 @@
 
 ## ドキュメント
 
-- [環境構築](docs/setup.md)
-- [書き込み方法](docs/flashing.md)
-- [制御構造・アーキテクチャ](docs/architecture.md)
-- [地上局セットアップ](docs/ground-station.md)
-- [JLCPCB 発注手順](docs/pcb-ordering.md)
+- [環境構築](docs/setup.md)（未作成）
+- [書き込み方法](docs/flashing.md)（未作成）
+- [制御構造・アーキテクチャ](docs/architecture.md)（未作成）
+- [地上局セットアップ](docs/ground-station.md)（未作成）
+- [JLCPCB 発注手順](docs/pcb-ordering.md)（未作成）
 
 ---
 
 ## ディレクトリ構造
 
-XIAO ESP32S3を2枚（XIAO1・XIAO2）使い、SPIで接続する構成。詳細は [architecture.md](docs/architecture.md) を参照。
+Seeed XIAO ESP32-S3 を1枚使う構成。ミッション本体は `env:mission`（`src/mission/main.cpp`）。
 
 ```
 rocket_Payload_UTAT2026/
 │
-├── platformio.ini           # ビルド・ボード・ライブラリ設定（env:xiao1 / env:xiao2 他）
+├── platformio.ini           # ビルド・ボード・ライブラリ設定（env:mission / env:test-* ）
 │
 ├── include/
-│   ├── shared.h             # XIAO1タスク間共有データ（SensorData・MissionState）
-│   └── spi_protocol.h       # XIAO1⇔XIAO2間のSPIフレーム定義（SpiFrameToXiao2 他）
+│   └── secrets.example.h    # Wi-Fi・MQTT接続設定のひな形（secrets.h にコピーして使う）
 │
 ├── src/
-│   ├── xiao1/                       # センサー・GPS・誘導PID計算（SPIマスター）
-│   │   ├── main.cpp                 # 起動・タスク生成
-│   │   └── tasks/
-│   │       ├── task_sensor.h        # IMU・気圧・地磁気読み取り＋姿勢フィルタ（100Hz, Core1）
-│   │       ├── task_gps.h           # GPS受信・パース（Core0）
-│   │       ├── task_navigation.h    # 誘導PID計算（100Hz, Core1）
-│   │       ├── task_mission.h       # ミッションステート遷移（20Hz, Core1）
-│   │       └── task_spi_link.h      # XIAO2への送信（100Hz, Core1）
-│   └── xiao2/                       # モータ駆動・WiFiテレメトリ中継（SPIスレーブ）
-│       └── main.cpp
+│   ├── mission/             # ミッション本体（キャリブレーション → EKF起動 → 誘導 → 停止）
+│   ├── MotorController/     # 単純な方位PID → 左右PWMの差動
+│   ├── Actuator/            # モーター制御（TB6612FNG）
+│   ├── Deployer/            # ロケット分離・パラシュート分離（ニクロム線）
+│   └── LED/                 # LED制御
 │
 ├── lib/
-│   ├── Sensor/              # BMP280・MPU6050・BMM350 ドライバ＋姿勢フィルタ  ─ XIAO1
-│   ├── GPS/                 # TinyGPSPlus ラッパー                          ─ XIAO1
-│   ├── PID/                 # 汎用PIDコントローラ                          ─ XIAO1
-│   ├── SpiLinkMaster/       # XIAO2へのSPI送信（マスター側）                ─ XIAO1
-│   ├── SpiLinkSlave/        # XIAO1からのSPI受信（スレーブ側）              ─ XIAO2
-│   ├── Radio/               # WiFi SoftAP・HTTP GETでバイナリフレーム配信（PULL方式） ─ XIAO2
-│   ├── Actuator/            # モーター制御（TB6612FNG）                     ─ XIAO2
-│   └── Deployer/            # ロケット分離・パラシュート分離（ニクロム線）・LED ─ XIAO1
+│   ├── Encoder/             # 左右ホイールエンコーダ（ホール、A/B相の割り込みカウント）
+│   ├── Expander/            # I/Oエキスパンダ（MCP23008）
+│   ├── GPS/                 # TinyGPSPlus ラッパー
+│   ├── KarmanFilter/        # 拡張カルマンフィルタ（EKF）
+│   ├── Sensor/              # BMP280・MPU6050 ドライバ
+│   └── Telemetry/           # Wi-Fi + MQTT で地上局へ送信
+│
+├── tests/                   # センサー・アクチュエータ単体の動作確認（env:test-*）
+│
+├── matlab/
+│   └── ekf_cansat_simulation/  # EKF・誘導のシミュレーション（符号規約の参照実装）
 │
 ├── ground/
-│   ├── receiver.py          # HTTP GETポーリング受信＋CSVロギング＋Tkinter GUI
-│   ├── mock_device.py       # 実機なしでreceiver.pyを確認するためのモック
-│   ├── requirements.txt
-│   └── logs/                # 保存されたCSVログ（.gitignore推奨）
+│   └── server/              # 地上局（Mosquitto・Telegraf・InfluxDB・Grafana の docker compose）
 │
-├── hardware/
-│   ├── kicad/               # KiCad プロジェクトファイル
-│   └── jlcpcb/
-│       ├── gerbers/         # Gerberファイル（発注用ZIP）
-│       ├── bom/             # Bill of Materials
-│       └── cpl/             # Component Placement List
-│
-└── docs/                    # ドキュメント
+└── hardware/
+    ├── kicad/               # KiCad プロジェクトファイル
+    └── jlcpcb/
+        ├── gerbers/         # Gerberファイル（発注用ZIP）
+        ├── bom/             # Bill of Materials
+        └── cpl/             # Component Placement List
 ```

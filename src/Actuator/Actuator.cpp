@@ -15,6 +15,10 @@ static const int PIN_MOTOR_BIN1 = 5;
 static const int PIN_MOTOR_BIN2 = 6;
 static const int PIN_MOTOR_PWMB = 9;
 
+// 前回の回転の向き（+1 / -1 / 0 = 未設定）。初回は必ず書き込む
+static int lastDirLeft  = 0;
+static int lastDirRight = 0;
+
 void Actuator::begin(Expander& expander) {
     _expander = &expander;
 
@@ -31,24 +35,29 @@ void Actuator::begin(Expander& expander) {
 }
 
 // AIN1・AIN2で回転方向を決め、PWMAで速度を出力する（TB6612FNG標準の3ピン方式）
-static void driveMotor(Expander& expander, int in1Pin, int in2Pin, int pwmPin, int speed) {
+// 方向ピンはI2Cエクスパンダ経由なので、向きが前回（lastDir）と変わったときだけ書き込む
+static void driveMotor(Expander& expander, int in1Pin, int in2Pin, int pwmPin, int speed, int& lastDir) {
     speed = constrain(speed, -255, 255);
-    if (speed >= 0) {
-        expander.set_high(in1Pin);
-        expander.set_low(in2Pin);
-    } else {
-        expander.set_low(in1Pin);
-        expander.set_high(in2Pin);
+    const int dir = (speed >= 0) ? +1 : -1;
+    if (dir != lastDir) {
+        if (dir > 0) {
+            expander.set_high(in1Pin);
+            expander.set_low(in2Pin);
+        } else {
+            expander.set_low(in1Pin);
+            expander.set_high(in2Pin);
+        }
+        lastDir = dir;
     }
     analogWrite(pwmPin, abs(speed));
 }
 
 void Actuator::setMotorLeft(int speed) {
     if (!_expander) return;
-    driveMotor(*_expander, PIN_MOTOR_AIN1, PIN_MOTOR_AIN2, PIN_MOTOR_PWMA, speed);
+    driveMotor(*_expander, PIN_MOTOR_AIN1, PIN_MOTOR_AIN2, PIN_MOTOR_PWMA, speed, lastDirLeft);
 }
 
 void Actuator::setMotorRight(int speed) {
     if (!_expander) return;
-    driveMotor(*_expander, PIN_MOTOR_BIN1, PIN_MOTOR_BIN2, PIN_MOTOR_PWMB, speed);
+    driveMotor(*_expander, PIN_MOTOR_BIN1, PIN_MOTOR_BIN2, PIN_MOTOR_PWMB, speed, lastDirRight);
 }
