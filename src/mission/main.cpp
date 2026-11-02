@@ -120,18 +120,23 @@ static void setPhase(Phase next) {
     telemetry.log("phase %s", PHASE_NAMES[next]);
 }
 
-// getLat() などは TinyGPS の更新フラグを消すので、locationUpdated() を見て読むのはここだけにする。
+// getLat() などは TinyGPS の更新フラグを消すので、更新フラグを見て読むのはここだけにする。
 // ログや EKF はこの latest を使う。
 static void pollGps() {
     gps.update();
-    if (!gps.locationUpdated()) return;
-    latest.valid = true;
-    latest.lat = gps.getLat();
-    latest.lon = gps.getLon();
-    latest.alt = gps.getAltitude();
-    latest.cog_deg = gps.getCourseDeg();
-    latest.sog = gps.isCourseValid() ? gps.getSpeedMps() : 0;  // 無効なら COG 更新を確実にスキップさせる
-    fixPending = true;
+    if (gps.locationUpdated()) {
+        latest.valid = true;
+        latest.lat = gps.getLat();
+        latest.lon = gps.getLon();
+        latest.alt = gps.getAltitude();
+    }
+    // 位置は同じ測位の RMC と GGA の両方で更新されるので、新しい fix は RMC でだけ数える
+    // （同じ測位を独立な観測として2回 EKF に入れないため）
+    if (gps.courseUpdated()) {
+        latest.cog_deg = gps.getCourseDeg();
+        latest.sog = gps.isCourseValid() ? gps.getSpeedMps() : 0;  // 無効なら COG 更新を確実にスキップさせる
+        fixPending = true;
+    }
 }
 
 // MPU6050 の DLPF 21 Hz に対して 10 Hz で読むと折り返し雑音が入るので、10 ms ごとに読んで積算する

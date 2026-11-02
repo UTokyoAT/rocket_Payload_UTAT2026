@@ -20,6 +20,10 @@ public:
     // （呼ぶと内部の更新フラグが消費され、以後falseを返すようになるため）。
     bool locationUpdated();
 
+    // 前回呼び出し以降に fix ありの RMC を受信していればtrue。locationUpdated() と違い GGA では立たないので、
+    // 1回の測位につき1回だけ true になる。getCourseDeg() を呼ぶとフラグが消費される。
+    bool courseUpdated();
+
     float bearingTo(double lat, double lon);    // 現在地から指定座標への方位 [deg, 0-360, 北=0]
     float distanceTo(double lat, double lon);   // 現在地から指定座標への距離 [m]
 
