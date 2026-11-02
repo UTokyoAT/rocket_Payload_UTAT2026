@@ -5,7 +5,7 @@ const int PIN_RB = 1;   // エンコーダ右B相
 const int PIN_LA = 3;   // エンコーダ左A相
 const int PIN_LB = 4;   // エンコーダ左B相
 
-const float GEAR_RATIO = 210.0;     // モーターの減速比
+const float GEAR_RATIO = 210.0;     // モーターの減速比  // TODO(実測): 車輪1回転で 5880 カウントになるか確認
 const float PPR = 7.0;              // Pulses Per Revolution、軸が一回転する間に出るパルスの数
 const float COUNTS_PER_REV = PPR * GEAR_RATIO * 4.0;  // 1回転あたりのカウント数
 
@@ -26,6 +26,9 @@ void Encoder::begin() {
     pinMode(PIN_RB, INPUT_PULLUP);
     pinMode(PIN_LA, INPUT_PULLUP);   
     pinMode(PIN_LB, INPUT_PULLUP);
+    // 開始時の相状態を読んでおく（0固定だと最初のエッジを誤カウントしうる）
+    rightLastState = (digitalRead(PIN_RA) << 1) | digitalRead(PIN_RB);
+    leftLastState  = (digitalRead(PIN_LA) << 1) | digitalRead(PIN_LB);
     attachInterrupt(digitalPinToInterrupt(PIN_RA), updateRight, CHANGE);
     attachInterrupt(digitalPinToInterrupt(PIN_RB), updateRight, CHANGE);
     attachInterrupt(digitalPinToInterrupt(PIN_LA), updateLeft, CHANGE);
@@ -50,13 +53,18 @@ void IRAM_ATTR Encoder::updateLeft() {
     leftLastState = leftCurrentState;
 }
 
+void Encoder::setDirection(int signRight, int signLeft) {
+    rightSign = (signRight == -1) ? -1 : +1;
+    leftSign  = (signLeft == -1) ? -1 : +1;
+}
+
 double Encoder::getRightRevolutions() {
-    rightRevolutions = rightEncoderCount / COUNTS_PER_REV * TWO_PI;
+    rightRevolutions = rightSign * rightEncoderCount / COUNTS_PER_REV * TWO_PI;
     return rightRevolutions;
 }
 
 double Encoder::getLeftRevolutions() {
-    leftRevolutions = leftEncoderCount / COUNTS_PER_REV * TWO_PI;
+    leftRevolutions = leftSign * leftEncoderCount / COUNTS_PER_REV * TWO_PI;
     return leftRevolutions;
 }
 

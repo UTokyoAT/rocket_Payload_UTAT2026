@@ -5,6 +5,10 @@ class Encoder {
 public:
     void begin();
 
+    // 取り付け向きの設定。前進で角度が増えるなら +1、減るなら -1（それ以外の値は +1 として扱う）
+    void setDirection(int signRight, int signLeft);
+
+    // 累積の車輪回転角。名前は Revolutions だが戻り値は rad
     double getRightRevolutions();
     double getLeftRevolutions();
 
@@ -19,6 +23,7 @@ public:
 private:
     double rightLastAngle = 0;  // 前回 getRightDeltaAngle 呼び出し時の回転角 [rad]
     double leftLastAngle = 0;   // 前回 getLeftDeltaAngle 呼び出し時の回転角 [rad]
+    int rightSign = +1, leftSign = +1;
 
     static void updateRight();
     static void updateLeft();
