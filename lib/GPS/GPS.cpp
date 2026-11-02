@@ -4,8 +4,13 @@
 static TinyGPSPlus _gps;
 static HardwareSerial _serial(1);
 
-void GPS::begin(int rxPin, int txPin, uint32_t baud) {
-    _serial.begin(baud, SERIAL_8N1, rxPin, txPin);
+// XIAO ESP32S3: D7(GPIO44)にGPSモジュールのTXを、D6(GPIO43)にGPSモジュールのRXを接続
+const int PIN_GPS_RX = 44;  // D7 - GPSモジュールのTXへ接続
+const int PIN_GPS_TX = 43;  // D6 - GPSモジュールのRXへ接続
+const uint32_t GPS_BAUD = 9600;
+
+void GPS::begin() {
+    _serial.begin(GPS_BAUD, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
 }
 
 void GPS::update() {

@@ -12,11 +12,6 @@
 //   rocket_test の test_name=gps  … 測位中の1秒ごとの lat / lon / alt / sats / hdop
 //   rocket_log                    … 1秒ごとの状態ログ行（Serialにも出力）
 
-// XIAO ESP32S3: D7(GPIO44)にGPSモジュールのTXを、D6(GPIO43)にGPSモジュールのRXを接続
-static const int GPS_RX_PIN = 44;  // D7 - GPSモジュールのTXへ接続
-static const int GPS_TX_PIN = 43;  // D6 - GPSモジュールのRXへ接続
-static const uint32_t GPS_BAUD = 9600;
-
 static GPS gps;
 static Telemetry telemetry;
 static uint32_t _lastPrintMs = 0;
@@ -32,7 +27,7 @@ void setup() {
     telemetry.begin(cfg);
 
     telemetry.log("[TEST] GPS (GY-GPSV2-NEO6M) UART check starting...");
-    gps.begin(GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD);
+    gps.begin();
 }
 
 void loop() {

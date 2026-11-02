@@ -24,10 +24,6 @@
 static const double GOAL_LAT = 0;              // [deg] ゴールの緯度  TODO(当日): ゴール座標を入れる
 static const double GOAL_LON = 0;              // [deg] ゴールの経度  TODO(当日): ゴール座標を入れる
 
-static const int GPS_RX_PIN = 44;              // D7 - GPSモジュールのTXへ接続
-static const int GPS_TX_PIN = 43;              // D6 - GPSモジュールのRXへ接続
-static const uint32_t GPS_BAUD = 9600;
-
 static const double ACCEL_FWD_SIGN = +1;       // a = ACCEL_FWD_SIGN × ay（機体前方 = +y の想定） TODO(実測)
 static const int ENC_SIGN_R = +1;              // encoder.setDirection() に渡す。test-motor で確認
 static const int ENC_SIGN_L = +1;
@@ -352,7 +348,7 @@ void setup() {
 
     if (!sensor.begin()) telemetry.log("[MISSION] sensor init failed (BMP280=%d MPU6050=%d)",
                                        sensor.isBmp280Ready(), sensor.isMpu6050Ready());
-    gps.begin(GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD);
+    gps.begin();
     encoder.begin();
     encoder.setDirection(ENC_SIGN_R, ENC_SIGN_L);
 

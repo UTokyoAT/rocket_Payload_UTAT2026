@@ -4,7 +4,7 @@
 
 class GPS {
 public:
-    void begin(int rxPin, int txPin, uint32_t baud = 9600);
+    void begin();
     void update();          // ループで頻繁に呼ぶ（NMEAをバイト単位で食わせる）
 
     double getLat();        // [deg]
