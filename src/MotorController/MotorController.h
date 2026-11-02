@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include "Actuator.h"
-#include "KarmanFliter.h"
+#include "KalmanFilter.h"
 
 // CanSat 2輪誘導のモーター駆動制御（単純な方位PID → 左右PWMの差動）
 //

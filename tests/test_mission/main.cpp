@@ -3,7 +3,7 @@
 #include <Sensor.h>
 #include <GPS.h>
 #include <Encoder.h>
-#include <KarmanFliter.h>
+#include <KalmanFilter.h>
 #include <Telemetry.h>
 #include <Actuator.h>
 #include <MotorController.h>

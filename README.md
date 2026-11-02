@@ -36,7 +36,7 @@ rocket_Payload_UTAT2026/
 │   ├── Encoder/             # 左右ホイールエンコーダ（ホール、A/B相の割り込みカウント）
 │   ├── Expander/            # I/Oエキスパンダ（MCP23008）
 │   ├── GPS/                 # TinyGPSPlus ラッパー
-│   ├── KarmanFilter/        # 拡張カルマンフィルタ（EKF）
+│   ├── KalmanFilter/        # 拡張カルマンフィルタ（EKF）
 │   ├── Sensor/              # BMP280・MPU6050 ドライバ
 │   └── Telemetry/           # Wi-Fi + MQTT で地上局へ送信
 │
