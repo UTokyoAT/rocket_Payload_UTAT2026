@@ -16,7 +16,7 @@
 
 ## ディレクトリ構造
 
-Seeed XIAO ESP32-S3 を1枚使う構成。ミッション本体は `env:mission`（`src/mission/main.cpp`）。
+Seeed XIAO ESP32-S3 を1枚使う構成。ミッション本体は `env:mission`（`tests/test_mission/main.cpp`）。
 
 ```
 rocket_Payload_UTAT2026/
@@ -27,7 +27,6 @@ rocket_Payload_UTAT2026/
 │   └── secrets.example.h    # Wi-Fi・MQTT接続設定のひな形（secrets.h にコピーして使う）
 │
 ├── src/
-│   ├── mission/             # ミッション本体（キャリブレーション → EKF起動 → 誘導 → 停止）
 │   ├── MotorController/     # 単純な方位PID → 左右PWMの差動
 │   ├── Actuator/            # モーター制御（TB6612FNG）
 │   ├── Deployer/            # ロケット分離・パラシュート分離（ニクロム線）
@@ -41,7 +40,9 @@ rocket_Payload_UTAT2026/
 │   ├── Sensor/              # BMP280・MPU6050 ドライバ
 │   └── Telemetry/           # Wi-Fi + MQTT で地上局へ送信
 │
-├── tests/                   # センサー・アクチュエータ単体の動作確認（env:test-*）
+├── tests/
+│   ├── test_mission/        # ミッション本体（キャリブレーション → EKF起動 → 誘導 → 停止）
+│   └── test_*/              # センサー・アクチュエータ単体の動作確認（env:test-*）
 │
 ├── matlab/
 │   └── ekf_cansat_simulation/  # EKF・誘導のシミュレーション（符号規約の参照実装）
