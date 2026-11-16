@@ -53,6 +53,14 @@ void IRAM_ATTR Encoder::updateLeft() {
     leftLastState = leftCurrentState;
 }
 
+uint8_t Encoder::getRightPhase() const {
+    return (digitalRead(PIN_RA) << 1) | digitalRead(PIN_RB);
+}
+
+uint8_t Encoder::getLeftPhase() const {
+    return (digitalRead(PIN_LA) << 1) | digitalRead(PIN_LB);
+}
+
 void Encoder::setDirection(int signRight, int signLeft) {
     rightSign = (signRight == -1) ? -1 : +1;
     leftSign  = (signLeft == -1) ? -1 : +1;

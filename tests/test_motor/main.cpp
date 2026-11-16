@@ -27,7 +27,7 @@
 //
 // 安全のため、ブラウザからの通信が CONTACT_TIMEOUT_MS 以上途絶えたら両モーターを止める
 // （ページを開いている間は /status のポーリングが生存確認を兼ねる）。
-// USBシリアル(115200bps)にも状態を定期出力する。
+// 状態は telemetry.log() で 0.5秒ごとに rocket_log とUSBシリアル(115200bps)の両方に出す。
 // ルーターに繋がらないとパネルが開けずモーターも回せない（通信途絶扱いで停止状態のまま）。
 //
 // 確認ポイント:
@@ -181,7 +181,7 @@ static void stopMotors(const char* reason) {
     gLeftPwm = 0;
     gRightPwm = 0;
     applyMotors();
-    Serial.printf("[STOP] %s\n", reason);
+    telemetry.log("[STOP] %s", reason);
 }
 
 static void handleMotor() {
@@ -203,7 +203,7 @@ static void handleFreq() {
     }
     gPwmFreq = constrain(server.arg("hz").toInt(), 100, 20000);
     analogWriteFrequency(gPwmFreq);  // analogWriteで使用中の全ピンに反映される
-    Serial.printf("[FREQ] %u Hz\n", gPwmFreq);
+    telemetry.log("[FREQ] %u Hz", static_cast<unsigned>(gPwmFreq));
 
     char buf[32];
     snprintf(buf, sizeof(buf), "freq=%u", gPwmFreq);
@@ -256,6 +256,9 @@ static void sendEncoder() {
         {"left_rad",  leftRad},           {"right_rad",  rightRad},
         {"left_rev",  leftRad / TWO_PI},  {"right_rev",  rightRad / TWO_PI},
         {"left_rpm",  gLeftRpm},          {"right_rpm",  gRightRpm},
+        // 診断用: ピン状態 (A<<1)|B と生カウント。手で車輪を回して phase が 0〜3 で変わるか見る
+        {"left_phase",  encoder.getLeftPhase()},  {"right_phase",  encoder.getRightPhase()},
+        {"left_count",  encoder.getLeftCount()},  {"right_count",  encoder.getRightCount()},
     });
 }
 
@@ -305,7 +308,8 @@ void loop() {
         gLastPrintMs = millis();
         double leftRad  = encoder.getLeftRevolutions()  - gLeftZero;
         double rightRad = encoder.getRightRevolutions() - gRightZero;
-        Serial.printf("[ENC] L: pwm=%4d rad=%9.3f rpm=%7.1f | R: pwm=%4d rad=%9.3f rpm=%7.1f\n",
-                      gLeftPwm, leftRad, gLeftRpm, gRightPwm, rightRad, gRightRpm);
+        telemetry.log("[ENC] L: pwm=%4d rad=%9.3f rpm=%7.1f ph=%u cnt=%ld | R: pwm=%4d rad=%9.3f rpm=%7.1f ph=%u cnt=%ld",
+                      gLeftPwm, leftRad, gLeftRpm, encoder.getLeftPhase(), encoder.getLeftCount(),
+                      gRightPwm, rightRad, gRightRpm, encoder.getRightPhase(), encoder.getRightCount());
     }
 }

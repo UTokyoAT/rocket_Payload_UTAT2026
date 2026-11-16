@@ -17,6 +17,12 @@ public:
     double getRightDeltaAngle();
     double getLeftDeltaAngle();
 
+    // 診断用: 現在のピン状態 (A<<1)|B（0〜3）と、割り込みで数えた生カウント
+    uint8_t getRightPhase() const;
+    uint8_t getLeftPhase() const;
+    long    getRightCount() const { return rightEncoderCount; }
+    long    getLeftCount()  const { return leftEncoderCount; }
+
     double rightRevolutions = 0;
     double leftRevolutions = 0;
 
