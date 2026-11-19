@@ -1,47 +1,58 @@
 #include <Arduino.h>
 #include <Sensor.h>
+#include <Expander.h>
 #include <Deployer.h>
-#include <Radio.h>
-#include "spi_protocol.h"
+#include <Telemetry.h>
+#include "secrets.h"
 
-// LAUNCH判定〜ロケット分離（ニクロム線通電）確認テスト（XIAO1単体完結版）。
-// PlatformIOで env:test-judge-launch を選択してXIAO1へ書き込む。
+// LAUNCH判定〜ロケット分離（ニクロム線通電）確認テスト（単体完結版）。
+// PlatformIOで env:test-judge-launch を選択して書き込む。
+// 事前に include/secrets.example.h を include/secrets.h にコピーして値を設定し、
+// ground/server で `docker compose up -d` しておく。
 //
-// test_launch_judge_xiao1/xiao2はXIAO1⇔XIAO2のSPI連携込みで確認するテストだが、
-// こちらはXIAO2を使わず、XIAO1だけで完結させる。WiFiテレメトリ配信もSPI経由の
-// 中継ではなくXIAO1のRadioで直接行う（test_sensorと同じ構成）。
-// 目的: 気圧センサ値取得 → LAUNCH判定 → Rocket分離ニクロム線通電 → WiFiでの状態確認、
-//   の一連の流れをXIAO2の配線・書き込みなしで単体確認する。
+// 目的: 気圧センサ値取得 → LAUNCH判定 → Rocket分離ニクロム線通電（エクスパンダ経由）
+//   → 地上局での状態確認、の一連の流れを単体で確認する。
+// ニクロム線のピン配置は src/Deployer 側で定義している（ロケット分離: エクスパンダGP1）。
 //
-// LAUNCH判定のしきい値・確認tick数はtask_mission.hの値と揃えている
-// （LAUNCH_ALT_THRESHOLD_M=3.0m、LAUNCH_CONFIRM_TICKS=5、周期は本テストも100Hz目安）。
+// LAUNCH判定: 高度がLAUNCH_ALT_THRESHOLD_Mを LAUNCH_CONFIRM_TICKS 回連続で超えたら確定。
+// 周期は100Hz目安（Sensor::update()の想定周期）。
 //
-// 確認方法: CanSat-AP（パスワード cansat2026）に接続し、http://192.168.4.1 で
-//   alt・mission_stateを確認する。mission_stateがLAUNCH(1)からDETACH(2)に変われば
-//   LAUNCH判定＋Rocket通電が起きたことを意味する。
+// 確認方法（InfluxDBのData Explorer / Grafana）:
+//   rocket_test の test_name=judge_launch … 100msごとの以下のフィールド
+//     alt            起動地点からの相対高度（m）
+//     launched       LAUNCH確定済みか（1/0）。1になればLAUNCH判定＋Rocket通電が起きた
+//     confirm_count  しきい値超えの連続tick数
+//   rocket_log … LAUNCH検出・通電結果・1秒ごとの状態
 //
-// ベンチで気圧センサを手で覆う/開放する等して繰り返し試せるよう、シリアルから
-// 'r' でLAUNCH判定状態をリセットできる（実機のように再起動しなくても再試行可能）。
+// ベンチで気圧センサを手で覆う/持ち上げる等して繰り返し試せるよう、シリアルから
+// 'r' でLAUNCH判定状態をリセットできる（再起動しなくても再試行可能）。
 //
 // コマンド（USBシリアル、改行区切り）:
 //   r    LAUNCH判定状態をリセットし、再度LAUNCH待ちに戻す（Rocketは再通電しない）
 //   ?    現在の状態を表示
 
-static const float LAUNCH_ALT_THRESHOLD_M = 3.0f;
-static const int   LAUNCH_CONFIRM_TICKS   = 5;
+static const float    LAUNCH_ALT_THRESHOLD_M = 3.0f;
+static const int      LAUNCH_CONFIRM_TICKS   = 5;
 
-static Sensor sensor;
-static Deployer deployer;
-static Radio radio;
+static const uint32_t SAMPLE_PERIOD_MS = 10;    // 100Hz
+static const uint32_t SEND_PERIOD_MS   = 100;   // 10Hz
+static const uint32_t LOG_PERIOD_MS    = 1000;
+
+static Sensor    sensor;
+static Expander  expander;
+static Deployer  deployer;
+static Telemetry telemetry;
 
 static bool launched = false;
 static int  launchConfirmCount = 0;
 
-static uint32_t _lastPrintMs = 0;
+static uint32_t _lastSendMs = 0;
+static uint32_t _lastLogMs  = 0;
 
 static void printStatus(float alt) {
-    Serial.printf("[STATUS] alt=%.2fm launched=%s confirmCount=%d/%d\n",
-                  alt, launched ? "yes" : "no", launchConfirmCount, LAUNCH_CONFIRM_TICKS);
+    telemetry.log("[STATUS] alt=%.2fm launched=%s confirmCount=%d/%d mqtt=%s",
+                  alt, launched ? "yes" : "no", launchConfirmCount, LAUNCH_CONFIRM_TICKS,
+                  telemetry.isConnected() ? "yes" : "no");
 }
 
 static void handleCommand(String cmd) {
@@ -51,7 +62,7 @@ static void handleCommand(String cmd) {
     if (cmd == "r") {
         launched = false;
         launchConfirmCount = 0;
-        Serial.println("[RESET] LAUNCH judge state reset. Waiting for LAUNCH again.");
+        telemetry.log("[RESET] LAUNCH judge state reset. Waiting for LAUNCH again.");
     } else if (cmd == "?") {
         printStatus(sensor.getAltitude());
     } else {
@@ -63,22 +74,31 @@ void setup() {
     Serial.begin(115200);
     delay(500);  // USB CDC安定待ち
 
-    Serial.println("[TEST] LAUNCH judge -> Rocket deploy check (XIAO1 standalone) starting...");
+    Telemetry::Config cfg;
+    cfg.ssid     = WIFI_SSID;
+    cfg.password = WIFI_PASSWORD;
+    cfg.mqttHost = MQTT_HOST;
+    telemetry.begin(cfg);
+
+    // begin()直後はまだ未接続なのでここでのログはSerialにしか出ない
+    telemetry.log("[TEST] LAUNCH judge -> Rocket deploy check starting...");
 
     sensor.begin();
-    Serial.printf("[TEST] BMP280=%s\n", sensor.isBmp280Ready() ? "OK" : "NG");
+    telemetry.log("[TEST] BMP280=%s", sensor.isBmp280Ready() ? "OK" : "NG");
 
-    deployer.begin();
-
-    radio.begin("CanSat-AP", "cansat2026");
-    Serial.printf("[TEST] Radio ready. Connect to CanSat-AP and open http://%s\n",
-                  radio.getIP().toString().c_str());
+    if (!expander.setup()) {
+        telemetry.log("[TEST] Expander init failed (nichrome cannot be driven)");
+    }
+    // begin内のenableOutputでOUTPUT+LOWになる（起動直後に通電しない）
+    deployer.begin(expander);
 
     Serial.println("  r    LAUNCH判定状態をリセット（再度LAUNCH待ちに戻る）");
     Serial.println("  ?    現在の状態を表示");
 }
 
 void loop() {
+    uint32_t start = millis();
+
     if (Serial.available()) {
         String cmd = Serial.readStringUntil('\n');
         handleCommand(cmd);
@@ -87,38 +107,32 @@ void loop() {
     sensor.update();
     float alt = sensor.getAltitude();
 
-    // task_mission.hのLAUNCH状態と同じロジック（高度がしきい値を一定tick連続で超えたら確定）
     if (!launched) {
         launchConfirmCount = (alt > LAUNCH_ALT_THRESHOLD_M) ? launchConfirmCount + 1 : 0;
         if (launchConfirmCount >= LAUNCH_CONFIRM_TICKS) {
             launched = true;
-            Serial.println("[TEST] LAUNCH detected! Firing rocket separation nichrome...");
-            deployer.deployRocket();
-            Serial.println("[TEST] Rocket nichrome fired.");
+            telemetry.log("[TEST] LAUNCH detected! Firing rocket separation nichrome...");
+            // deployRocket()は書き込み失敗を返さないため、ON/OFFを個別に呼んで結果を確認する
+            bool onOk = deployer.setRocket(true);
+            delay(1000);  // Deployer::deployRocket()と同じ通電時間
+            bool offOk = deployer.setRocket(false);
+            telemetry.log("[TEST] Rocket nichrome fired. on=%s off=%s",
+                          onOk ? "OK" : "FAIL", offOk ? "OK" : "FAIL");
         }
     }
 
-    SpiFrameToXiao2 out{};
-    out.timestamp_ms = millis();
-    out.alt   = alt;
-    out.roll  = sensor.getRoll();
-    out.pitch = sensor.getPitch();
-    out.yaw   = 0.0f;
-    out.lat   = 0.0f;
-    out.lon   = 0.0f;
-    // このテストはDETACH以降を扱わないため、LAUNCH確定後は代替としてDETACHを送る
-    out.mission_state   = static_cast<uint8_t>(launched ? MissionState::DETACH : MissionState::LAUNCH);
-    out.pid_output       = 0.0f;
-    out.destination_yaw  = 0.0f;
+    if (start - _lastSendMs >= SEND_PERIOD_MS) {
+        _lastSendMs = start;
+        telemetry.sendTest("judge_launch", {{"alt", alt},
+                                             {"launched", launched},
+                                             {"confirm_count", launchConfirmCount}});
+    }
 
-    radio.setData(out);
-    radio.poll();
-
-    uint32_t now = millis();
-    if (now - _lastPrintMs >= 500) {
-        _lastPrintMs = now;
+    if (start - _lastLogMs >= LOG_PERIOD_MS) {
+        _lastLogMs = start;
         printStatus(alt);
     }
 
-    delay(10);  // 100Hz目安（task_mission.hのMISSION_TICK_MSに合わせる）
+    uint32_t elapsed = millis() - start;
+    if (elapsed < SAMPLE_PERIOD_MS) delay(SAMPLE_PERIOD_MS - elapsed);
 }

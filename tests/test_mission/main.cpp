@@ -12,7 +12,14 @@
 // ミッション本体。PlatformIOで env:mission を選択して書き込む。
 // 地上に置かれた状態から キャリブレーション → EKF起動 → ゴールまで誘導 → 停止 までを行う。
 //
-//   WAIT_FIX → STATIC_0 → CAL_RUN → STATIC_2 → GUIDE → POST → DONE
+//   WAIT_CMD ─goal→ GOAL_FIX → READY ─start→ WAIT_FIX → STATIC_0 → CAL_RUN → STATIC_2 → GUIDE → POST → DONE
+//
+// ゴールの登録とミッション開始は地上局から MQTT の <prefix>/cmd (既定 rocket/cmd) にテキストで指示する。
+//   goal              いまいる場所の GPS を N_avg 個平均してゴールに登録する（WAIT_CMD / READY で受付）
+//   goal <lat> <lon>  ゴールを座標で直接登録する（WAIT_CMD / READY で受付）
+//   start             ミッションを開始する（READY でだけ受付）
+//   abort             GOAL_FIX なら登録を取り消す。開始後ならモーターを止めて POST へ
+// 例: mosquitto_pub -h <PCのIP> -t rocket/cmd -q 1 -m goal
 //
 // すべて loop() 内の非ブロッキングな状態遷移で書く（GPS::getStaticLatLon() は fix が揃うまで
 // 戻らず IMU を読めないので使わない）。ログは USB シリアルの CSV と Telemetry の2系統。
@@ -22,9 +29,6 @@
 // 符号規約：方位は真北0・時計回り正、ω も時計回り正（MPU6050 の gz の符号反転）、a は機体前方正。
 
 // --- 定数 ---
-static const double GOAL_LAT = 0;              // [deg] ゴールの緯度  TODO(当日): ゴール座標を入れる
-static const double GOAL_LON = 0;              // [deg] ゴールの経度  TODO(当日): ゴール座標を入れる
-
 static const double ACCEL_FWD_SIGN = +1;       // a = ACCEL_FWD_SIGN × ay（機体前方 = +y の想定） TODO(実測)
 static const int ENC_SIGN_R = +1;              // encoder.setDirection() に渡す。test-motor で確認
 static const int ENC_SIGN_L = +1;
@@ -47,6 +51,7 @@ static const uint32_t TICK_PERIOD_MS = 100;    // EKF・誘導・ログの周期
 static const int TELEMETRY_QUEUE_LEN = 50;     // [周期] 送信待ちの上限（5 s ぶん）。あふれた分は捨てる
 static const int LOG_QUEUE_LEN = 8;            // [行] ログの送信待ちの上限
 static const int LOG_MSG_LEN = 96;             // [文字] ログ1行の長さ
+static const int CMD_QUEUE_LEN = 4;            // [個] 地上局コマンドの受信待ちの上限
 
 static const char CSV_HEADER[] =
     "t_ms,phase,pN,pE,v,theta,ba,bg,P_pN,P_pE,P_theta,d_hat,theta_e,u,dutyL,dutyR,"
@@ -54,8 +59,9 @@ static const char CSV_HEADER[] =
     "vR,vL,lat,lon,sog,tick_us,imu_us,late_ms,overruns,tx_drop";
 
 // --- フェーズ ---
-enum Phase { WAIT_FIX, STATIC_0, CAL_RUN, STATIC_2, GUIDE, POST, DONE };  // ログの phase 列はこの番号
-static const char* const PHASE_NAMES[] = {"WAIT_FIX", "STATIC_0", "CAL_RUN", "STATIC_2", "GUIDE", "POST", "DONE"};
+enum Phase { WAIT_CMD, GOAL_FIX, READY, WAIT_FIX, STATIC_0, CAL_RUN, STATIC_2, GUIDE, POST, DONE };  // ログの phase 列はこの番号
+static const char* const PHASE_NAMES[] = {"WAIT_CMD", "GOAL_FIX", "READY", "WAIT_FIX", "STATIC_0",
+                                          "CAL_RUN", "STATIC_2", "GUIDE", "POST", "DONE"};
 
 // 静止区間（STATIC_0 / STATIC_2）の集計。IMU は 100 ms 平均を1サンプルとする
 struct StaticAverage {
@@ -108,6 +114,7 @@ struct TelemetryMsg {
     TelemetryRecord rec;
     int phase;
     double d_hat, theta_e_deg, u;
+    double goal_lat, goal_lon;   // 未登録なら NAN（送信時に省略される）
     bool gnss_upd, cog_upd;
     TickTiming timing;
 };
@@ -122,12 +129,14 @@ static KalmanFilter    ekf;
 static MotorController motor;
 static EkfConfig       ekfCfg;
 
-static Phase    phase = WAIT_FIX;
+static Phase    phase = WAIT_CMD;
 static uint32_t phaseStartMs = 0;
 static uint32_t lastImuMs = 0;
 static uint32_t lastTickMs = 0;
 
-static StaticAverage static0, static2;
+static StaticAverage static0, static2, goalAvg;
+static bool      goalSet = false;      // ゴールが登録済みか
+static double    goalLat = NAN, goalLon = NAN;  // [deg] ゴール
 static LatestFix latest;
 static bool      fixPending = false;   // 前回の周期以降に新しい fix が届いたか
 static ImuAverage imuSum;
@@ -135,6 +144,7 @@ static bool      calStopped = false;   // CAL_RUN の直進を止めて T_SETTLE
 static TickTiming timing;
 static QueueHandle_t telemetryQueue = nullptr;
 static QueueHandle_t logQueue = nullptr;
+static QueueHandle_t cmdQueue = nullptr;
 
 // 送信タスク。ここで MQTT の送信待ちが続いても制御ループは止まらない
 static void telemetryTask(void*) {
@@ -147,6 +157,8 @@ static void telemetryTask(void*) {
                 {"d_hat", msg.d_hat},
                 {"theta_e_deg", msg.theta_e_deg},
                 {"u", msg.u},
+                {"goal_lat", msg.goal_lat},
+                {"goal_lon", msg.goal_lon},
                 {"gnss_upd", msg.gnss_upd},
                 {"cog_upd", msg.cog_upd},
                 {"tick_us", msg.timing.tick_us},
@@ -176,6 +188,62 @@ static void setPhase(Phase next) {
     phase = next;
     phaseStartMs = millis();
     logEvent("phase %s", PHASE_NAMES[next]);
+}
+
+// MQTT の内部タスクから呼ばれる。ここでは積むだけにして、処理は制御ループの runTick() で行う
+static void onCommand(const char* cmd) {
+    char buf[Telemetry::COMMAND_MAX_LEN];
+    strlcpy(buf, cmd, sizeof(buf));
+    xQueueSend(cmdQueue, buf, 0);
+}
+
+static void registerGoal(double lat, double lon, const char* how) {
+    goalLat = lat;
+    goalLon = lon;
+    goalSet = true;
+    logEvent("goal registered (%s): %.7f, %.7f", how, lat, lon);
+    setPhase(READY);
+}
+
+// 地上局コマンドを1つ処理する。受け付けられないものはログに出して捨てる
+static void handleCommand(char* cmd) {
+    char* verb = strtok(cmd, " \t\r\n");
+    if (!verb) return;
+    char* arg1 = strtok(nullptr, " \t\r\n");
+    char* arg2 = strtok(nullptr, " \t\r\n");
+    const bool beforeStart = (phase == WAIT_CMD || phase == READY);
+
+    if (strcmp(verb, "goal") == 0) {
+        if (!beforeStart) {
+            logEvent("cmd goal rejected in %s", PHASE_NAMES[phase]);
+        } else if (!arg1) {
+            goalAvg = StaticAverage();
+            setPhase(GOAL_FIX);
+        } else {
+            char *end1, *end2 = nullptr;
+            const double lat = strtod(arg1, &end1);
+            const double lon = arg2 ? strtod(arg2, &end2) : NAN;
+            if (*end1 || !arg2 || *end2 || fabs(lat) > 90 || fabs(lon) > 180) {
+                logEvent("cmd goal: bad args (use: goal <lat> <lon>)");
+            } else {
+                registerGoal(lat, lon, "manual");
+            }
+        }
+    } else if (strcmp(verb, "start") == 0) {
+        if (phase == READY && goalSet) setPhase(WAIT_FIX);
+        else logEvent("cmd start rejected in %s%s", PHASE_NAMES[phase], goalSet ? "" : " (no goal)");
+    } else if (strcmp(verb, "abort") == 0) {
+        if (phase == GOAL_FIX) {
+            logEvent("goal registration cancelled");
+            setPhase(goalSet ? READY : WAIT_CMD);
+        } else if (!beforeStart && phase != POST && phase != DONE) {
+            motor.stop();
+            logEvent("ABORT");
+            setPhase(POST);
+        }
+    } else {
+        logEvent("unknown cmd: %s", verb);
+    }
 }
 
 // getLat() などは TinyGPS の更新フラグを消すので、更新フラグを見て読むのはここだけにする。
@@ -238,7 +306,7 @@ static void startGuidance() {
     ekf.ekf_setup(ekfCfg, cal);
 
     double goalN, goalE;
-    ekf.latLonToLocal(GOAL_LAT, GOAL_LON, goalN, goalE);
+    ekf.latLonToLocal(goalLat, goalLon, goalN, goalE);
     motor.setGoal(goalN, goalE);
 
     // エンコーダの差分基準をそろえる
@@ -312,6 +380,8 @@ static void sendTelemetry(const ImuAverage& imu) {
     msg.d_hat = motor.getDistance();
     msg.theta_e_deg = motor.getHeadingError() * RAD_TO_DEG;
     msg.u = motor.getControl();
+    msg.goal_lat = goalLat;
+    msg.goal_lon = goalLon;
     msg.gnss_upd = ekf.gnss_updated;
     msg.cog_upd = ekf.cog_updated;
     msg.timing = timing;
@@ -327,9 +397,25 @@ static void runTick() {
     const double vL = ekf.wheelSpeed(encoder.getLeftDeltaAngle());
     const bool hasFix = fixPending;
     fixPending = false;
+
+    char cmd[Telemetry::COMMAND_MAX_LEN];
+    while (xQueueReceive(cmdQueue, cmd, 0) == pdTRUE) handleCommand(cmd);
     const uint32_t elapsed = millis() - phaseStartMs;
 
     switch (phase) {
+    case WAIT_CMD:  // 地上局の goal / start を待つだけ
+    case READY:
+        break;
+
+    case GOAL_FIX:
+        if (hasFix && gps.isValid()) goalAvg.addFix(latest.lat, latest.lon);
+        if (goalAvg.fixes >= ekfCfg.N_avg) {
+            char how[24];
+            snprintf(how, sizeof(how), "GPS avg of %d", goalAvg.fixes);
+            registerGoal(goalAvg.lat(), goalAvg.lon(), how);
+        }
+        break;
+
     case WAIT_FIX:
         if (gps.isValid()) setPhase(STATIC_0);
         break;
@@ -393,14 +479,18 @@ void setup() {
     Serial.begin(115200);
     delay(500);  // USB CDC安定待ち
 
+    // コマンドは接続直後から届きうるので、キューを作ってから begin() する
+    telemetryQueue = xQueueCreate(TELEMETRY_QUEUE_LEN, sizeof(TelemetryMsg));
+    logQueue = xQueueCreate(LOG_QUEUE_LEN, LOG_MSG_LEN);
+    cmdQueue = xQueueCreate(CMD_QUEUE_LEN, Telemetry::COMMAND_MAX_LEN);
+
     Telemetry::Config telemetryCfg;
     telemetryCfg.ssid     = WIFI_SSID;
     telemetryCfg.password = WIFI_PASSWORD;
     telemetryCfg.mqttHost = MQTT_HOST;
+    telemetry.onCommand(onCommand);
     telemetry.begin(telemetryCfg);
 
-    telemetryQueue = xQueueCreate(TELEMETRY_QUEUE_LEN, sizeof(TelemetryMsg));
-    logQueue = xQueueCreate(LOG_QUEUE_LEN, LOG_MSG_LEN);
     xTaskCreatePinnedToCore(telemetryTask, "telemetry-tx", 6144, nullptr, 1, nullptr, 0);  // Wi-Fi と同じ Core 0
 
     if (!expander.setup()) logEvent("[MISSION] Expander init failed (motor direction pins will not work)");

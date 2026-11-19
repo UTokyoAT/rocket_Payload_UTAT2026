@@ -35,6 +35,16 @@ ESP32-S3 --(MQTT, QoS1)--> Mosquitto --(subscribe)--> Telegraf --(write)--> Infl
 | `rocket/telemetry` | `publishRecord()` | 1 | `rocket_telemetry` | 本番の統合レコード(10Hz)。`seq`(連番)と`uptime_ms`(起動からの経過時間)を含む |
 | `rocket/test/<name>` | `sendTest()` | 0 | `rocket_test` (tag: `test_name`) | 切り分けテスト。送った数値フィールド(と`uptime_ms`)だけをそのまま保存 |
 | `rocket/log` | `log()` | 0 | `rocket_log` (field: `value`) | テキスト1行のログ |
+| `rocket/cmd` | `onCommand()` (受信) | 1 | (保存しない) | 地上局→ロボットのテキストコマンド。retain は無視される |
+
+ミッション(`tests/test_mission`)のコマンド:
+
+```
+docker compose exec mosquitto mosquitto_pub -t rocket/cmd -q 1 -m goal                       # 現在地をGPS平均してゴール登録
+docker compose exec mosquitto mosquitto_pub -t rocket/cmd -q 1 -m 'goal 35.1234567 139.1234567'  # 座標で直接登録
+docker compose exec mosquitto mosquitto_pub -t rocket/cmd -q 1 -m start                      # ミッション開始
+docker compose exec mosquitto mosquitto_pub -t rocket/cmd -q 1 -m abort                      # 中止(モーター停止)
+```
 
 本番レコードは欠けたフィールド(センサー故障・GNSS未取得など)があっても、あるものだけ書き込まれる。
 

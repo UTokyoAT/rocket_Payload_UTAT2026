@@ -33,7 +33,24 @@ bool Telemetry::begin(const Config& cfg) {
     strlcpy(_prefix, cfg.topicPrefix ? cfg.topicPrefix : "rocket", sizeof(_prefix));
 
     _mqtt.setServer(_host, cfg.mqttPort).setClientId(_clientId).setKeepAlive(15);
-    _mqtt.onConnect([](bool) { Serial.println("[Telemetry] MQTT connected"); });
+    // cleanSession なので購読は接続のたびにやり直す
+    _mqtt.onConnect([this](bool) {
+        Serial.println("[Telemetry] MQTT connected");
+        if (_cmdCb) {
+            char topic[64];
+            snprintf(topic, sizeof(topic), "%s/cmd", _prefix);
+            _mqtt.subscribe(topic, 1);
+        }
+    });
+    _mqtt.onMessage([this](const espMqttClientTypes::MessageProperties& props, const char* topic,
+                           const uint8_t* payload, size_t len, size_t index, size_t total) {
+        // 分割されて届く長いメッセージはコマンドではないので捨てる
+        if (!_cmdCb || props.retain || index != 0 || len != total || len >= COMMAND_MAX_LEN) return;
+        char cmd[COMMAND_MAX_LEN];
+        memcpy(cmd, payload, len);
+        cmd[len] = '\0';
+        _cmdCb(cmd);
+    });
     _mqtt.onDisconnect([](espMqttClientTypes::DisconnectReason reason) {
         Serial.printf("[Telemetry] MQTT disconnected (reason=%d)\n", static_cast<int>(reason));
     });

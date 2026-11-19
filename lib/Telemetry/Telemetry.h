@@ -10,6 +10,7 @@
 //   本番       publishRecord()  QoS1  <prefix>/telemetry        統合レコード(10Hz想定)
 //   切り分け   sendTest()       QoS0  <prefix>/test/<name>      任意フィールドだけ
 //   ログ       log()            QoS0  <prefix>/log              テキスト1行 (Serialにも出力)
+//   受信       onCommand()      QoS1  <prefix>/cmd              地上局からのテキストコマンド
 //
 // begin() は接続を待たずに戻る。Wi-Fi/MQTTの再接続は内部タスクが面倒を見るので、
 // 呼び出し側は送信APIを呼ぶだけでよい。送信APIはどのタスクからでも呼べる。
@@ -24,7 +25,17 @@ public:
         const char* topicPrefix = "rocket";  // ground/server の telegraf.conf の購読トピックと合わせる
     };
 
+    // 受信したコマンド(終端付きの文字列)を受け取る。MQTTの内部タスクから呼ばれるので、
+    // 中では重い処理をせずキューに積むなどしてすぐ戻ること。
+    using CommandCallback = void (*)(const char* cmd);
+
     Telemetry();
+
+    // <prefix>/cmd を購読し、届いたコマンドを cb に渡す。begin() より前に呼ぶ。
+    // retain されたメッセージは無視する(再起動直後に古いコマンドを実行しないため)。
+    // 長さ COMMAND_MAX_LEN 以上のコマンドは捨てる。
+    static const size_t COMMAND_MAX_LEN = 64;
+    void onCommand(CommandCallback cb) { _cmdCb = cb; }
 
     // 文字列は内部にコピーする。ssid/mqttHost が無ければ false。二重呼び出しも false。
     bool begin(const Config& cfg);
@@ -54,6 +65,7 @@ private:
     espMqttClient _mqtt;
     TaskHandle_t  _task = nullptr;
     bool          _started = false;
+    CommandCallback _cmdCb = nullptr;
     std::atomic<uint32_t> _seq{0};
 
     // espMqttClient は host/clientId をコピーせずポインタで保持するため、実体をここに持つ
