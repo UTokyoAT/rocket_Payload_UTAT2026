@@ -4,7 +4,7 @@
 // パラシュートの分離のためのニクロム線通電：GP0
 static const int PIN_ROCKET    = 1;
 static const int PIN_PARACHUTE = 0;
-static const int DELAY_ms = 1000;
+static const int DELAY_ms = 3000;
 
 void Deployer::begin(Expander& expander) {
     _expander = &expander;

@@ -1,0 +1,308 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 2,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "P951FEA4DE68E13C5"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "query": "import \"date\"\r\nimport \"strings\"\r\n\r\n// Grafana の変数が置き換わらなかったとき($ で始まる/空)は既定値 d を使う\r\npick = (s, d) => if strings.hasPrefix(v: s, prefix: \"$\") or s == \"\" then d else s\r\n\r\nmode      = pick(s: \"$range_mode\", d: \"dashboard\")\r\nrel       = duration(v: pick(s: \"$relative\", d: \"-15m\"))\r\nabs_start = time(v: pick(s: \"$abs_start\", d: \"2026-09-28T20:30:00+09:00\"))\r\nabs_stop  = time(v: pick(s: \"$abs_stop\",  d: \"2026-09-28T20:35:00+09:00\"))\r\nwin       = duration(v: pick(s: \"$window\", d: \"1m\"))\r\n\r\nstart = if mode == \"relative\" then date.add(d: rel, to: now())\r\n  else if mode == \"absolute\" or mode == \"window\" then abs_start\r\n  else date.time(t: v.timeRangeStart)\r\nstop = if mode == \"relative\" then now()\r\n  else if mode == \"absolute\" then abs_stop\r\n  else if mode == \"window\" then date.add(d: win, to: abs_start)\r\n  else date.time(t: v.timeRangeStop)\r\n  \r\n// ---- ここから下をパネルごとに書き換える ----\r\nfrom(bucket: \"rocket_payload\")\r\n  |> range(start: start, stop: stop)\r\n  |> filter(fn: (r) => r._measurement == \"rocket_log\")\r\n  |> keep(columns: [\"_time\", \"_value\"])\r\n  |> group()\r\n  |> sort(columns: [\"_time\"], desc: true)\r\n",
+          "refId": "A"
+        }
+      ],
+      "title": "シリアルログ",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "P951FEA4DE68E13C5"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "width": 80
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "_time"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 165
+              },
+              {
+                "id": "displayName",
+                "value": "時刻"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "frameIndex": 5,
+        "showHeader": true
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "P951FEA4DE68E13C5"
+          },
+          "query": "import \"date\"\r\nimport \"strings\"\r\n\r\n// Grafana の変数が置き換わらなかったとき($ で始まる/空)は既定値 d を使う\r\npick = (s, d) => if strings.hasPrefix(v: s, prefix: \"$\") or s == \"\" then d else s\r\n\r\nmode      = pick(s: \"$range_mode\", d: \"dashboard\")\r\nrel       = duration(v: pick(s: \"$relative\", d: \"-15m\"))\r\nabs_start = time(v: pick(s: \"$abs_start\", d: \"2026-09-28T20:30:00+09:00\"))\r\nabs_stop  = time(v: pick(s: \"$abs_stop\",  d: \"2026-09-28T20:35:00+09:00\"))\r\nwin       = duration(v: pick(s: \"$window\", d: \"1m\"))\r\n\r\nstart = if mode == \"relative\" then date.add(d: rel, to: now())\r\n  else if mode == \"absolute\" or mode == \"window\" then abs_start\r\n  else date.time(t: v.timeRangeStart)\r\nstop = if mode == \"relative\" then now()\r\n  else if mode == \"absolute\" then abs_stop\r\n  else if mode == \"window\" then date.add(d: win, to: abs_start)\r\n  else date.time(t: v.timeRangeStop)\r\n\r\n// ---- ここから下をパネルごとに書き換える ----\r\nfrom(bucket: \"rocket_payload\")\r\n  |> range(start: start, stop: stop)\r\n  |> filter(fn: (r) => r._measurement == \"rocket_telemetry\")\r\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\r\n  |> drop(columns: [\"_start\", \"_stop\", \"_measurement\", \"topic\"])\r\n  |> group()\r\n  |> sort(columns: [\"_time\"], desc: true)\r\n",
+          "refId": "A"
+        }
+      ],
+      "title": "全データ",
+      "type": "table"
+    }
+  ],
+  "preload": false,
+  "schemaVersion": 40,
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "text": "dashboard",
+          "value": "dashboard"
+        },
+        "description": "",
+        "label": "range_mode",
+        "name": "range_mode",
+        "options": [
+          {
+            "selected": true,
+            "text": "dashboard",
+            "value": "dashboard"
+          },
+          {
+            "selected": false,
+            "text": "relative",
+            "value": "relative"
+          },
+          {
+            "selected": false,
+            "text": "absolute",
+            "value": "absolute"
+          },
+          {
+            "selected": false,
+            "text": "window",
+            "value": "window"
+          }
+        ],
+        "query": "dashboard, relative, absolute, window",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "text": "-10s",
+          "value": "-10s"
+        },
+        "description": "",
+        "name": "relative",
+        "options": [
+          {
+            "selected": true,
+            "text": "-10s",
+            "value": "-10s"
+          },
+          {
+            "selected": false,
+            "text": "-1m",
+            "value": "-1m"
+          },
+          {
+            "selected": false,
+            "text": "-5m",
+            "value": "-5m"
+          },
+          {
+            "selected": false,
+            "text": "-15m",
+            "value": "-15m"
+          },
+          {
+            "selected": false,
+            "text": "-1h",
+            "value": "-1h"
+          },
+          {
+            "selected": false,
+            "text": "-6h",
+            "value": "-6h"
+          },
+          {
+            "selected": false,
+            "text": "-1d",
+            "value": "-1d"
+          }
+        ],
+        "query": "-10s, -1m, -5m, -15m, -1h, -6h, -1d",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "text": "2026-09-28T20:30:00+09:00",
+          "value": "2026-09-28T20:30:00+09:00"
+        },
+        "name": "abs_start",
+        "options": [
+          {
+            "selected": true,
+            "text": "2026-09-28T20:30:00+09:00",
+            "value": "2026-09-28T20:30:00+09:00"
+          }
+        ],
+        "query": "2026-09-28T20:30:00+09:00",
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "text": "2026-09-28T20:35:00+09:00",
+          "value": "2026-09-28T20:35:00+09:00"
+        },
+        "name": "abs_stop",
+        "options": [
+          {
+            "selected": true,
+            "text": "2026-09-28T20:35:00+09:00",
+            "value": "2026-09-28T20:35:00+09:00"
+          }
+        ],
+        "query": "2026-09-28T20:35:00+09:00",
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "text": "10s",
+          "value": "10s"
+        },
+        "name": "window",
+        "options": [
+          {
+            "selected": true,
+            "text": "10s",
+            "value": "10s"
+          },
+          {
+            "selected": false,
+            "text": "30s",
+            "value": "30s"
+          },
+          {
+            "selected": false,
+            "text": "1m",
+            "value": "1m"
+          },
+          {
+            "selected": false,
+            "text": "5m",
+            "value": "5m"
+          },
+          {
+            "selected": false,
+            "text": "10m",
+            "value": "10m"
+          }
+        ],
+        "query": "10s, 30s, 1m, 5m, 10m",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "全データ＆ログ",
+  "uid": "dfzmkwh7e5h4wb",
+  "version": 6,
+  "weekStart": ""
+}
